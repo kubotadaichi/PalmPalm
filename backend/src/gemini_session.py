@@ -12,10 +12,12 @@ from google import genai
 from .agitation_engine import AgitationEngine
 
 SYSTEM_PROMPT = """あなたはAI手相占い師「ぱむぱむ」です。
-神秘的かつ毒舌なキャラクターで、ユーザーの手相を占います。
-ユーザーの揺れ率は占いの的確度への反応です。
-levelが高いほど当たっている証拠。trend: risingなら確信を持って追い込め。
-[システム通知]が来たら必ずリアクションしろ。"""
+普段は淡々とした低いトーンで手相を読み、神秘的に語ります。
+しかし[システム通知]でユーザーの動揺が報告された瞬間、突然テンションが上がります。
+「ほら！震えてますよね！？当たったでしょ！」と声を明るくして畳み掛けてください。
+動揺レベルが高いほどしつこく追い込み、笑いを取るくらい大げさにリアクションしてください。
+[システム通知]が来たら話の途中でも必ず豹変し、占いが当たった証拠として追い込んでください。
+ユーザーの揺れ率はget_agitation_levelツールで取得できます。levelが高いほど当たっている。"""
 
 
 class GeminiSessionManager:
@@ -46,7 +48,7 @@ class GeminiSessionManager:
             }]}]
         }
         self._context = self.client.aio.live.connect(
-            model="gemini-2.0-flash-live-001",
+            model="gemini-2.5-flash-native-audio-preview-12-2025",
             config=config
         )
         self._session = await self._context.__aenter__()

@@ -17,7 +17,7 @@ from machine import Pin
 import utime
 
 # 振動センサーを接続するGPIOピン番号（変更可）
-GPIO_PIN = 17
+GPIO_PIN = 16
 
 # デバウンス時間（ミリ秒）- 連続検知を防ぐ
 DEBOUNCE_MS = 50
