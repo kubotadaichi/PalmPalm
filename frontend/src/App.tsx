@@ -1,35 +1,34 @@
 import { useState } from 'react'
-import reactLogo from './assets/react.svg'
-import viteLogo from '/vite.svg'
-import './App.css'
+import { useBackendWS } from './hooks/useBackendWS'
+import { VibrationEffect } from './components/VibrationEffect'
+import { TitlePage } from './pages/TitlePage'
+import { RulesPage } from './pages/RulesPage'
+import { SessionPage } from './pages/SessionPage'
+import { EndPage } from './pages/EndPage'
 
-function App() {
-  const [count, setCount] = useState(0)
+type Page = 'title' | 'rules' | 'session' | 'end'
+
+export default function App() {
+  const [page, setPage] = useState<Page>('title')
+  const { agitationLevel, aiText, connected } = useBackendWS()
 
   return (
-    <>
-      <div>
-        <a href="https://vite.dev" target="_blank">
-          <img src={viteLogo} className="logo" alt="Vite logo" />
-        </a>
-        <a href="https://react.dev" target="_blank">
-          <img src={reactLogo} className="logo react" alt="React logo" />
-        </a>
-      </div>
-      <h1>Vite + React</h1>
-      <div className="card">
-        <button onClick={() => setCount((count) => count + 1)}>
-          count is {count}
-        </button>
-        <p>
-          Edit <code>src/App.tsx</code> and save to test HMR
-        </p>
-      </div>
-      <p className="read-the-docs">
-        Click on the Vite and React logos to learn more
-      </p>
-    </>
+    <VibrationEffect agitationLevel={agitationLevel}>
+      {!connected && (
+        <div className="fixed top-2 left-2 text-xs text-yellow-400 z-50 bg-black/50 px-2 py-1 rounded">
+          ⚠ Backend未接続
+        </div>
+      )}
+      {page === 'title' && <TitlePage onStart={() => setPage('rules')} />}
+      {page === 'rules' && <RulesPage onReady={() => setPage('session')} />}
+      {page === 'session' && (
+        <SessionPage
+          agitationLevel={agitationLevel}
+          aiText={aiText}
+          onEnd={() => setPage('end')}
+        />
+      )}
+      {page === 'end' && <EndPage onBack={() => setPage('title')} />}
+    </VibrationEffect>
   )
 }
-
-export default App
