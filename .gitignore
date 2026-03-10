@@ -5,3 +5,6 @@ frontend/dist/
 __pycache__/
 *.pyc
 .DS_Store
+
+# Docker
+frontend/.env.local

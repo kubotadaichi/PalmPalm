@@ -1,0 +1,16 @@
+services:
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    ports:
+      - "5173:5173"
+    volumes:
+      - ./frontend/src:/app/src
+      - ./frontend/public:/app/public
+      - ./frontend/index.html:/app/index.html
+      # node_modules はコンテナ内のものを使う（ホストにマウントしない）
+    environment:
+      - VITE_BACKEND_WS_URL=ws://host.docker.internal:8000/ws/frontend
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
