@@ -1,15 +1,9 @@
 import { useEffect, useState } from 'react'
 import { KirbyMock } from '../components/KirbyMock'
 
-interface Props {
-  agitationLevel: number
-  aiText: string
-  onEnd: () => void
-}
-
 const SESSION_SECONDS = 120
 
-export function SessionPage({ agitationLevel, aiText, onEnd }: Props) {
+export function SessionPage({ agitationLevel, aiText, onEnd }) {
   const [timeLeft, setTimeLeft] = useState(SESSION_SECONDS)
   const isTalking = aiText.length > 0
 

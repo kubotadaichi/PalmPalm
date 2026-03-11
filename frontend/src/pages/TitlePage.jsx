@@ -1,8 +1,4 @@
-interface Props {
-  onStart: () => void
-}
-
-export function TitlePage({ onStart }: Props) {
+export function TitlePage({ onStart }) {
   return (
     <div className="flex flex-col items-center justify-center h-screen bg-gray-900 text-white">
       <h1 className="text-5xl font-bold mb-2 tracking-widest">ぱむぱむ</h1>

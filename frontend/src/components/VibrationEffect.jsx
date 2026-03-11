@@ -1,4 +1,4 @@
-// frontend/src/components/VibrationEffect.tsx
+// frontend/src/components/VibrationEffect.jsx
 //
 // ============================================================
 // 🎨 ここを自由に編集してください！（初心者担当エリア）
@@ -18,14 +18,7 @@
 //   agitationLevel を使って className や style を変えるだけです！
 // ============================================================
 
-import type { ReactNode } from 'react'
-
-interface Props {
-  agitationLevel: number  // 0〜100
-  children: ReactNode
-}
-
-export function VibrationEffect({ agitationLevel, children }: Props) {
+export function VibrationEffect({ agitationLevel, children }) {
   const isAgitated = agitationLevel > 50
 
   return (

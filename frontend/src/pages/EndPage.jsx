@@ -1,8 +1,4 @@
-interface Props {
-  onBack: () => void
-}
-
-export function EndPage({ onBack }: Props) {
+export function EndPage({ onBack }) {
   return (
     <div className="flex flex-col items-center justify-center h-screen bg-gray-900 text-white">
       <div className="w-64 h-64 rounded-full bg-gray-700 flex flex-col items-center justify-center gap-6">

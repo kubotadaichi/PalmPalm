@@ -1,16 +1,12 @@
 import { useEffect, useState } from 'react'
 
-interface Props {
-  onReady: () => void
-}
-
 const STEPS = [
   { label: '手を乗せる' },
   { label: '深呼吸' },
   { label: '落ち着いたら\n自分でスタート' },
 ]
 
-export function RulesPage({ onReady }: Props) {
+export function RulesPage({ onReady }) {
   const [countdown, setCountdown] = useState(30)
 
   useEffect(() => {

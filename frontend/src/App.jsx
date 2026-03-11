@@ -6,10 +6,8 @@ import { RulesPage } from './pages/RulesPage'
 import { SessionPage } from './pages/SessionPage'
 import { EndPage } from './pages/EndPage'
 
-type Page = 'title' | 'rules' | 'session' | 'end'
-
 export default function App() {
-  const [page, setPage] = useState<Page>('title')
+  const [page, setPage] = useState('title')
   const { agitationLevel, aiText, connected } = useBackendWS()
 
   return (

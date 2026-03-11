@@ -1,12 +1,7 @@
-// frontend/src/components/KirbyMock.tsx
+// frontend/src/components/KirbyMock.jsx
 // 本番ではimageUrlを渡すと画像に差し替えられる
 
-interface Props {
-  isTalking: boolean
-  imageUrl?: string
-}
-
-export function KirbyMock({ isTalking, imageUrl }: Props) {
+export function KirbyMock({ isTalking, imageUrl }) {
   if (imageUrl) {
     return (
       <img
