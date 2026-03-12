@@ -52,9 +52,6 @@ export function useVAD({ httpBase }) {
     MicVAD.new({
       workersOptions: { url: '/vad.worklet.bundle.min.js' },
       modelURL: '/silero_vad_v5.onnx',
-      ortConfig: (ort) => {
-        ort.env.wasm.wasmPaths = '/'
-      },
       onSpeechStart: () => setIsSpeaking(true),
       onSpeechEnd: async (audio) => {
         setIsSpeaking(false)

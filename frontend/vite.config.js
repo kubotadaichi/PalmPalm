@@ -11,4 +11,7 @@ export default defineConfig({
       usePolling: true,  // Docker内でのファイル変更検知に必須
     },
   },
+  optimizeDeps: {
+    exclude: ['onnxruntime-web'],  // WASM動的importをViteのバンドルから除外
+  },
 })
