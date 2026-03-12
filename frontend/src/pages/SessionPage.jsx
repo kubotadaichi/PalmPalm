@@ -4,11 +4,12 @@ import { useVAD } from '../hooks/useVAD'
 
 const SESSION_SECONDS = 120
 
-export function SessionPage({ agitationLevel, aiText, aiAudioUrl, httpBase, onEnd }) {
+export function SessionPage({ agitationLevel, aiText, aiAudioUrl, httpBase, turn, setTurnToAi, onEnd }) {
   const [timeLeft, setTimeLeft] = useState(SESSION_SECONDS)
   const isTalking = aiText.length > 0
   const audioRef = useRef(null)
-  const { isSpeaking, vadError } = useVAD({ httpBase })
+  const { isSpeaking, vadError, isSending, timeLeft: recordingTimeLeft } =
+    useVAD({ httpBase, maxSeconds: 10, turn, onRecordingComplete: setTurnToAi })
 
   useEffect(() => {
     if (timeLeft <= 0) {
@@ -26,9 +27,7 @@ export function SessionPage({ agitationLevel, aiText, aiAudioUrl, httpBase, onEn
     }
     const audio = new Audio(aiAudioUrl)
     audioRef.current = audio
-    audio.play().catch(() => {
-      // autoplay policy に引っかかった場合は無視
-    })
+    audio.play().catch(() => {})
   }, [aiAudioUrl])
 
   return (
@@ -41,12 +40,13 @@ export function SessionPage({ agitationLevel, aiText, aiAudioUrl, httpBase, onEn
       </div>
       {vadError && (
         <div className="absolute bottom-16 left-1/2 -translate-x-1/2 text-xs text-yellow-400 bg-black/60 px-3 py-1 rounded max-w-xs text-center">
-          VAD: {vadError}
+          マイク: {vadError}
         </div>
       )}
-      {isSpeaking && (
+      {turn === 'user' && (
         <div className="absolute bottom-4 left-1/2 -translate-x-1/2 text-sm text-red-400 bg-black/60 px-3 py-1 rounded">
-          🎤 録音中...
+          🎤 話してください... 残り {recordingTimeLeft}s
+          {isSending && <span className="ml-2 text-gray-300">送信中...</span>}
         </div>
       )}
       <KirbyMock isTalking={isTalking} />
