@@ -10,7 +10,7 @@ export default function App() {
   const [page, setPage] = useState('title')
   const wsUrl = import.meta.env.VITE_BACKEND_WS_URL ?? 'ws://localhost:8000/ws/frontend'
   const httpBase = wsUrl.replace(/^ws/, 'http').replace(/\/ws\/.*$/, '')
-  const { agitationLevel, aiText, aiAudioUrl, connected, turn, setTurnToAi } = useBackendWS()
+  const { agitationLevel, aiText, aiAudioUrl, connected, turn, aiTurnEnded, setTurnToAi, startUserTurn } = useBackendWS()
 
   return (
     <VibrationEffect agitationLevel={agitationLevel}>
@@ -28,6 +28,8 @@ export default function App() {
           aiAudioUrl={aiAudioUrl}
           httpBase={httpBase}
           turn={turn}
+          aiTurnEnded={aiTurnEnded}
+          startUserTurn={startUserTurn}
           setTurnToAi={setTurnToAi}
           onEnd={() => setPage('end')}
         />

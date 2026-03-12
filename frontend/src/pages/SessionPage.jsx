@@ -4,8 +4,9 @@ import { useVAD } from '../hooks/useVAD'
 
 const SESSION_SECONDS = 120
 
-export function SessionPage({ agitationLevel, aiText, aiAudioUrl, httpBase, turn, setTurnToAi, onEnd }) {
+export function SessionPage({ agitationLevel, aiText, aiAudioUrl, httpBase, turn, aiTurnEnded, startUserTurn, setTurnToAi, onEnd }) {
   const [timeLeft, setTimeLeft] = useState(SESSION_SECONDS)
+  const [isAudioPlaying, setIsAudioPlaying] = useState(false)
   const isTalking = aiText.length > 0
   const audioRef = useRef(null)
   const { vadError, isSending, timeLeft: recordingTimeLeft } =
@@ -27,8 +28,18 @@ export function SessionPage({ agitationLevel, aiText, aiAudioUrl, httpBase, turn
     }
     const audio = new Audio(aiAudioUrl)
     audioRef.current = audio
-    audio.play().catch(() => {})
+    setIsAudioPlaying(true)
+    audio.onended = () => setIsAudioPlaying(false)
+    audio.onerror = () => setIsAudioPlaying(false)
+    audio.play().catch(() => setIsAudioPlaying(false))
   }, [aiAudioUrl])
+
+  // AIの発話（テキスト＋音声）が両方完了したらユーザーターンへ
+  useEffect(() => {
+    if (aiTurnEnded && !isAudioPlaying) {
+      startUserTurn()
+    }
+  }, [aiTurnEnded, isAudioPlaying, startUserTurn])
 
   return (
     <div className="flex flex-col items-center justify-center h-screen bg-gray-800 text-white relative">

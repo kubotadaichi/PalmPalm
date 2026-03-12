@@ -112,7 +112,7 @@ export function useVAD({ httpBase, maxSeconds = DEFAULT_MAX_SECONDS, turn, onRec
       setTimeLeft(maxSeconds)
 
       countdownIntervalRef.current = setInterval(() => {
-        setTimeLeft((prev) => (prev > 1 ? prev - 1 : 1))
+        setTimeLeft((prev) => Math.max(0, prev - 1))
       }, 1000)
       stopTimeoutRef.current = setTimeout(() => {
         if (recorder.state === 'recording') {

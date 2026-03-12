@@ -7,6 +7,7 @@ export function useBackendWS() {
   const [aiAudioUrl, setAiAudioUrl] = useState(null)
   const [connected, setConnected] = useState(false)
   const [turn, setTurn] = useState('ai')
+  const [aiTurnEnded, setAiTurnEnded] = useState(false)
   const wsRef = useRef(null)
 
   useEffect(() => {
@@ -31,7 +32,7 @@ export function useBackendWS() {
         } else if (msg.type === 'ai_audio') {
           setAiAudioUrl(httpBase + msg.url)
         } else if (msg.type === 'ai_turn_end') {
-          setTurn('user')
+          setAiTurnEnded(true)
           setAiText('')
         }
       } catch {
@@ -45,6 +46,10 @@ export function useBackendWS() {
   }, [])
 
   const setTurnToAi = useCallback(() => setTurn('ai'), [])
+  const startUserTurn = useCallback(() => {
+    setTurn('user')
+    setAiTurnEnded(false)
+  }, [])
 
-  return { agitationLevel, agitationTrend, aiText, aiAudioUrl, connected, turn, setTurnToAi }
+  return { agitationLevel, agitationTrend, aiText, aiAudioUrl, connected, turn, aiTurnEnded, setTurnToAi, startUserTurn }
 }
