@@ -1,87 +1,158 @@
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
+
+const DEFAULT_MAX_SECONDS = 10
 
 /**
- * Float32Array (16kHz モノラル PCM) を WAV Blob に変換する
- */
-function float32ToWav(samples, sampleRate = 16000) {
-  const buffer = new ArrayBuffer(44 + samples.length * 2)
-  const view = new DataView(buffer)
-
-  const writeString = (offset, str) => {
-    for (let i = 0; i < str.length; i++) {
-      view.setUint8(offset + i, str.charCodeAt(i))
-    }
-  }
-
-  writeString(0, 'RIFF')
-  view.setUint32(4, 36 + samples.length * 2, true)
-  writeString(8, 'WAVE')
-  writeString(12, 'fmt ')
-  view.setUint32(16, 16, true)
-  view.setUint16(20, 1, true)
-  view.setUint16(22, 1, true)
-  view.setUint32(24, sampleRate, true)
-  view.setUint32(28, sampleRate * 2, true)
-  view.setUint16(32, 2, true)
-  view.setUint16(34, 16, true)
-  writeString(36, 'data')
-  view.setUint32(40, samples.length * 2, true)
-
-  let offset = 44
-  for (let i = 0; i < samples.length; i++) {
-    const s = Math.max(-1, Math.min(1, samples[i]))
-    view.setInt16(offset, s < 0 ? s * 0x8000 : s * 0x7fff, true)
-    offset += 2
-  }
-
-  return new Blob([buffer], { type: 'audio/wav' })
-}
-
-/**
- * マイク音声をVADで検知し、発話終了時にバックエンドへPOSTするフック
+ * マイク音声を最大N秒録音してバックエンドへPOSTするフック
  * @param {string} httpBase - バックエンドのHTTPベースURL (例: "http://localhost:8000")
  */
-export function useVAD({ httpBase }) {
+export function useVAD({ httpBase, maxSeconds = DEFAULT_MAX_SECONDS, turn, onRecordingComplete }) {
   const [isSpeaking, setIsSpeaking] = useState(false)
   const [vadError, setVadError] = useState(null)
+  const [isSending, setIsSending] = useState(false)
+  const [timeLeft, setTimeLeft] = useState(maxSeconds)
+  const [isSupported] = useState(
+    typeof navigator !== 'undefined' &&
+      Boolean(navigator.mediaDevices?.getUserMedia) &&
+      typeof MediaRecorder !== 'undefined',
+  )
+
+  const streamRef = useRef(null)
+  const recorderRef = useRef(null)
+  const chunksRef = useRef([])
+  const stopTimeoutRef = useRef(null)
+  const countdownIntervalRef = useRef(null)
+
+  const clearTimers = useCallback(() => {
+    if (stopTimeoutRef.current) {
+      clearTimeout(stopTimeoutRef.current)
+      stopTimeoutRef.current = null
+    }
+    if (countdownIntervalRef.current) {
+      clearInterval(countdownIntervalRef.current)
+      countdownIntervalRef.current = null
+    }
+  }, [])
+
+  const sendRecordedAudio = useCallback(
+    async (blob) => {
+      if (!blob || blob.size === 0) return
+
+      setIsSending(true)
+      try {
+        await fetch(`${httpBase}/api/audio`, {
+          method: 'POST',
+          headers: { 'Content-Type': blob.type || 'application/octet-stream' },
+          body: blob,
+        })
+      } catch {
+        setVadError('音声送信に失敗しました')
+      } finally {
+        setIsSending(false)
+      }
+    },
+    [httpBase],
+  )
+
+  const ensureStream = useCallback(async () => {
+    if (streamRef.current) return streamRef.current
+    const stream = await navigator.mediaDevices.getUserMedia({ audio: true })
+    streamRef.current = stream
+    return stream
+  }, [])
+
+  const stopRecording = useCallback(() => {
+    const recorder = recorderRef.current
+    if (recorder && recorder.state === 'recording') {
+      recorder.stop()
+    }
+  }, [])
+
+  const startRecording = useCallback(async () => {
+    setVadError(null)
+    if (isSpeaking || !isSupported) return
+
+    try {
+      const stream = await ensureStream()
+
+      const preferredType = 'audio/webm;codecs=opus'
+      const options = MediaRecorder.isTypeSupported(preferredType)
+        ? { mimeType: preferredType }
+        : undefined
+
+      const recorder = new MediaRecorder(stream, options)
+      recorderRef.current = recorder
+      chunksRef.current = []
+
+      recorder.ondataavailable = (event) => {
+        if (event.data && event.data.size > 0) {
+          chunksRef.current.push(event.data)
+        }
+      }
+      recorder.onerror = (event) => {
+        setVadError(event.error?.message ?? '録音中にエラーが発生しました')
+      }
+      recorder.onstop = async () => {
+        clearTimers()
+        setIsSpeaking(false)
+        setTimeLeft(maxSeconds)
+
+        const blob = new Blob(chunksRef.current, {
+          type: recorder.mimeType || 'audio/webm',
+        })
+        chunksRef.current = []
+        await sendRecordedAudio(blob)
+        onRecordingComplete?.()
+      }
+
+      recorder.start()
+      setIsSpeaking(true)
+      setTimeLeft(maxSeconds)
+
+      countdownIntervalRef.current = setInterval(() => {
+        setTimeLeft((prev) => (prev > 1 ? prev - 1 : 1))
+      }, 1000)
+      stopTimeoutRef.current = setTimeout(() => {
+        if (recorder.state === 'recording') {
+          recorder.stop()
+        }
+      }, maxSeconds * 1000)
+    } catch (error) {
+      setVadError(error?.message ?? 'マイク初期化に失敗しました')
+    }
+  }, [clearTimers, ensureStream, isSpeaking, isSupported, maxSeconds, sendRecordedAudio])
+
+  // turn が 'user' になったら自動録音開始
+  useEffect(() => {
+    if (turn === 'user') {
+      startRecording()
+    }
+    if (turn === 'ai') {
+      stopRecording()
+    }
+  }, [turn]) // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
-    let vad = null
-
-    import('@ricky0123/vad-web')
-      .then(({ MicVAD }) =>
-        MicVAD.new({
-          workersOptions: { url: '/vad.worklet.bundle.min.js' },
-          modelURL: '/silero_vad_v5.onnx',
-          onSpeechStart: () => setIsSpeaking(true),
-          onSpeechEnd: async (audio) => {
-            setIsSpeaking(false)
-            const wav = float32ToWav(audio)
-            try {
-              await fetch(`${httpBase}/api/audio`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/octet-stream' },
-                body: wav,
-              })
-            } catch {
-              // ネットワークエラーは無視
-            }
-          },
-        })
-      )
-      .then((v) => {
-        vad = v
-        vad.start()
-      })
-      .catch((e) => {
-        console.error('[VAD] init error:', e)
-        setVadError(e?.message ?? String(e))
-      })
-
     return () => {
-      vad?.destroy()
+      clearTimers()
+      const recorder = recorderRef.current
+      if (recorder && recorder.state === 'recording') {
+        recorder.stop()
+      }
+      if (streamRef.current) {
+        streamRef.current.getTracks().forEach((track) => track.stop())
+        streamRef.current = null
+      }
     }
-  }, [httpBase])
+  }, [clearTimers])
 
-  return { isSpeaking, vadError }
+  return {
+    isSpeaking,
+    vadError,
+    isSending,
+    timeLeft,
+    isSupported,
+    startRecording,
+    stopRecording,
+  }
 }
