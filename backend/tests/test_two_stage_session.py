@@ -88,3 +88,25 @@ async def test_receive_audio_without_callback_is_noop():
     await manager.receive_audio(b"fake_wav_bytes", "audio/wav")
 
     assert client.models.calls == 0
+
+
+@pytest.mark.asyncio
+async def test_receive_audio_sends_ai_turn_end():
+    """receive_audio の応答後に ai_turn_end がbroadcastされる"""
+    engine = AgitationEngine()
+    client = _FakeClient(["stage1 text", "stage2 text"])
+    manager = TwoStageSessionManager(engine, client=client)
+
+    received = []
+
+    async def fake_broadcast(data):
+        received.append(data)
+
+    manager.set_broadcast_callback(fake_broadcast)
+    await manager.start_session()
+    await manager.receive_audio(b"fake_wav", "audio/wav")
+
+    assert any(m["type"] == "ai_turn_end" for m in received), \
+        "ai_turn_end が届いていない"
+    types = [m["type"] for m in received]
+    assert types[-1] == "ai_turn_end", "ai_turn_end が最後のメッセージでない"

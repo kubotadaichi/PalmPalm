@@ -128,6 +128,7 @@ class TwoStageSessionManager:
                 {"role": "model", "parts": [{"text": f"{stage1_text} {stage2_text}"}]},
             ])
             self._history = self._history[-12:]
+            await self._broadcast_callback({"type": "ai_turn_end"})
 
     async def _generate_text(self, contents: list, system_instruction: str) -> str:
         loop = asyncio.get_running_loop()
