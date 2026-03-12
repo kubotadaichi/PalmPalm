@@ -8,6 +8,8 @@ import { EndPage } from './pages/EndPage'
 
 export default function App() {
   const [page, setPage] = useState('title')
+  const wsUrl = import.meta.env.VITE_BACKEND_WS_URL ?? 'ws://localhost:8000/ws/frontend'
+  const httpBase = wsUrl.replace(/^ws/, 'http').replace(/\/ws\/.*$/, '')
   const { agitationLevel, aiText, aiAudioUrl, connected } = useBackendWS()
 
   return (
@@ -24,6 +26,7 @@ export default function App() {
           agitationLevel={agitationLevel}
           aiText={aiText}
           aiAudioUrl={aiAudioUrl}
+          httpBase={httpBase}
           onEnd={() => setPage('end')}
         />
       )}
