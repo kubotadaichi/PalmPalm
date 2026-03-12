@@ -1,5 +1,5 @@
-import { useState } from 'react'
-import { useMicVAD } from '@ricky0123/vad-web'
+import { useEffect, useState } from 'react'
+import { MicVAD } from '@ricky0123/vad-web'
 
 /**
  * Float32Array (16kHz モノラル PCM) を WAV Blob に変換する
@@ -46,36 +46,43 @@ export function useVAD({ httpBase }) {
   const [isSpeaking, setIsSpeaking] = useState(false)
   const [vadError, setVadError] = useState(null)
 
-  useMicVAD({
-    startOnLoad: true,
-    workersOptions: {
-      url: '/vad.worklet.bundle.min.js',
-    },
-    modelURL: '/silero_vad_v5.onnx',
-    ortConfig: (ort) => {
-      ort.env.wasm.wasmPaths = '/'
-    },
-    onSpeechStart: () => {
-      setIsSpeaking(true)
-    },
-    onSpeechEnd: async (audio) => {
-      setIsSpeaking(false)
-      const wav = float32ToWav(audio)
-      try {
-        await fetch(`${httpBase}/api/audio`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/octet-stream' },
-          body: wav,
-        })
-      } catch {
-        // ネットワークエラーは無視（セッション中断を防ぐ）
-      }
-    },
-    onError: (e) => {
-      console.error('[VAD] error:', e)
-      setVadError(e?.message ?? String(e))
-    },
-  })
+  useEffect(() => {
+    let vad = null
+
+    MicVAD.new({
+      workersOptions: { url: '/vad.worklet.bundle.min.js' },
+      modelURL: '/silero_vad_v5.onnx',
+      ortConfig: (ort) => {
+        ort.env.wasm.wasmPaths = '/'
+      },
+      onSpeechStart: () => setIsSpeaking(true),
+      onSpeechEnd: async (audio) => {
+        setIsSpeaking(false)
+        const wav = float32ToWav(audio)
+        try {
+          await fetch(`${httpBase}/api/audio`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/octet-stream' },
+            body: wav,
+          })
+        } catch {
+          // ネットワークエラーは無視
+        }
+      },
+    })
+      .then((v) => {
+        vad = v
+        vad.start()
+      })
+      .catch((e) => {
+        console.error('[VAD] init error:', e)
+        setVadError(e?.message ?? String(e))
+      })
+
+    return () => {
+      vad?.destroy()
+    }
+  }, [httpBase])
 
   return { isSpeaking, vadError }
 }
