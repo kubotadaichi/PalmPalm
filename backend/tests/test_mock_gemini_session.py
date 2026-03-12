@@ -106,3 +106,29 @@ async def test_send_push_sends_ai_audio():
 
     audio_msgs = [m for m in received if m["type"] == "ai_audio"]
     assert any(m["url"].startswith("/audio/spike") for m in audio_msgs)
+
+
+@pytest.mark.asyncio
+async def test_receive_audio_broadcasts_script_line():
+    """receive_audio は音声を無視して台本の次のセリフを返す"""
+    engine = AgitationEngine()
+    mock = MockGeminiSessionManager(engine)
+
+    received = []
+
+    async def fake_broadcast(data):
+        received.append(data)
+
+    mock.set_broadcast_callback(fake_broadcast)
+    await mock.start_session()
+    mock.stop()  # script_loop を止めて receive_audio だけテスト
+
+    received.clear()
+
+    await mock.receive_audio(b"dummy_audio_bytes", "audio/wav")
+
+    text_msgs = [m for m in received if m["type"] == "ai_text"]
+    audio_msgs = [m for m in received if m["type"] == "ai_audio"]
+    assert len(text_msgs) >= 1
+    assert len(audio_msgs) == 1
+    assert audio_msgs[0]["url"].startswith("/audio/")

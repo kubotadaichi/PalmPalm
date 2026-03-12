@@ -64,6 +64,19 @@ class MockGeminiSessionManager:
             await self._broadcast_callback({"type": "ai_text", "text": chunk})
             await asyncio.sleep(0.05)
 
+    async def receive_audio(self, audio_bytes: bytes, mime_type: str = "audio/wav"):
+        """ユーザー音声を受け取り、台本の次のセリフを返す（音声内容は無視）"""
+        if not self._broadcast_callback:
+            return
+        if not hasattr(self, '_audio_idx'):
+            self._audio_idx = 0
+        entry = _READING_SCRIPT[self._audio_idx % len(_READING_SCRIPT)]
+        self._audio_idx += 1
+        await self._broadcast_callback({"type": "ai_audio", "url": entry["audio"]})
+        for chunk in _chunks(entry["text"], size=8):
+            await self._broadcast_callback({"type": "ai_text", "text": chunk})
+            await asyncio.sleep(0.05)
+
     async def _script_loop(self):
         """3〜6秒ごとに台本テキストをチャンクで送信。終わったら先頭に戻る"""
         idx = 0
