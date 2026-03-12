@@ -1,5 +1,4 @@
 import { useEffect, useState } from 'react'
-import { MicVAD } from '@ricky0123/vad-web'
 
 /**
  * Float32Array (16kHz モノラル PCM) を WAV Blob に変換する
@@ -49,24 +48,27 @@ export function useVAD({ httpBase }) {
   useEffect(() => {
     let vad = null
 
-    MicVAD.new({
-      workersOptions: { url: '/vad.worklet.bundle.min.js' },
-      modelURL: '/silero_vad_v5.onnx',
-      onSpeechStart: () => setIsSpeaking(true),
-      onSpeechEnd: async (audio) => {
-        setIsSpeaking(false)
-        const wav = float32ToWav(audio)
-        try {
-          await fetch(`${httpBase}/api/audio`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/octet-stream' },
-            body: wav,
-          })
-        } catch {
-          // ネットワークエラーは無視
-        }
-      },
-    })
+    import('@ricky0123/vad-web')
+      .then(({ MicVAD }) =>
+        MicVAD.new({
+          workersOptions: { url: '/vad.worklet.bundle.min.js' },
+          modelURL: '/silero_vad_v5.onnx',
+          onSpeechStart: () => setIsSpeaking(true),
+          onSpeechEnd: async (audio) => {
+            setIsSpeaking(false)
+            const wav = float32ToWav(audio)
+            try {
+              await fetch(`${httpBase}/api/audio`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/octet-stream' },
+                body: wav,
+              })
+            } catch {
+              // ネットワークエラーは無視
+            }
+          },
+        })
+      )
       .then((v) => {
         vad = v
         vad.start()
