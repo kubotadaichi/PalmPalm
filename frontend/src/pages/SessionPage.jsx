@@ -8,7 +8,7 @@ export function SessionPage({ agitationLevel, aiText, aiAudioUrl, httpBase, turn
   const [timeLeft, setTimeLeft] = useState(SESSION_SECONDS)
   const isTalking = aiText.length > 0
   const audioRef = useRef(null)
-  const { isSpeaking, vadError, isSending, timeLeft: recordingTimeLeft } =
+  const { vadError, isSending, timeLeft: recordingTimeLeft } =
     useVAD({ httpBase, maxSeconds: 10, turn, onRecordingComplete: setTurnToAi })
 
   useEffect(() => {
