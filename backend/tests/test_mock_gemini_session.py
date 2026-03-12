@@ -132,3 +132,22 @@ async def test_receive_audio_broadcasts_script_line():
     assert len(text_msgs) >= 1
     assert len(audio_msgs) == 1
     assert audio_msgs[0]["url"].startswith("/audio/")
+
+
+@pytest.mark.asyncio
+async def test_start_session_sends_ai_turn_end():
+    """start_session後に ai_turn_end がbroadcastされる"""
+    engine = AgitationEngine()
+    mock = MockGeminiSessionManager(engine)
+
+    received = []
+
+    async def fake_broadcast(data):
+        received.append(data)
+
+    mock.set_broadcast_callback(fake_broadcast)
+    await mock.start_session()
+    mock.stop()
+
+    assert any(m["type"] == "ai_turn_end" for m in received), \
+        "ai_turn_end が届いていない"

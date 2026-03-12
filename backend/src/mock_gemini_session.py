@@ -40,18 +40,28 @@ class MockGeminiSessionManager:
         self._broadcast_callback = callback
 
     async def start_session(self):
-        """台本ループと振動モックをバックグラウンドで起動"""
+        """イントロ（台本1エントリ）を送信してからユーザーターンへ渡す。
+        振動モックはバックグラウンドで継続する。"""
         self._running = True
-        self._task = asyncio.create_task(self._script_loop())
         self._vibration_task = asyncio.create_task(self._vibration_loop())
+
+        entry = _READING_SCRIPT[0]
+        if self._broadcast_callback:
+            await self._broadcast_callback({"type": "ai_audio", "url": entry["audio"]})
+            for chunk in _chunks(entry["text"], size=8):
+                await self._broadcast_callback({"type": "ai_text", "text": chunk})
+                await asyncio.sleep(0.05)
+            await self._broadcast_callback({"type": "ai_turn_end"})
 
     def stop(self):
         """テスト用にループを止める"""
         self._running = False
         if self._task:
             self._task.cancel()
+            self._task = None
         if self._vibration_task:
             self._vibration_task.cancel()
+            self._vibration_task = None
 
     async def send_push(self, level: int, trend: str):
         """動揺急上昇時の豹変セリフを送信"""
@@ -76,23 +86,6 @@ class MockGeminiSessionManager:
         for chunk in _chunks(entry["text"], size=8):
             await self._broadcast_callback({"type": "ai_text", "text": chunk})
             await asyncio.sleep(0.05)
-
-    async def _script_loop(self):
-        """3〜6秒ごとに台本テキストをチャンクで送信。終わったら先頭に戻る"""
-        idx = 0
-        while self._running:
-            # テストが短時間で成立するよう最初の1行は即時送信する
-            if idx > 0:
-                await asyncio.sleep(random.uniform(3.0, 6.0))
-                if not self._running:
-                    break
-            entry = _READING_SCRIPT[idx % len(_READING_SCRIPT)]
-            idx += 1
-            if self._broadcast_callback:
-                await self._broadcast_callback({"type": "ai_audio", "url": entry["audio"]})
-                for chunk in _chunks(entry["text"], size=8):
-                    await self._broadcast_callback({"type": "ai_text", "text": chunk})
-                    await asyncio.sleep(0.05)
 
     async def _vibration_loop(self):
         """ランダムに振動イベントを発生させてフロントに配信"""
