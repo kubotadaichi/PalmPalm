@@ -54,3 +54,37 @@ async def test_send_push_without_callback_is_noop():
     await manager.send_push(level=60, trend="stable")
 
     assert client.models.calls == 0
+
+
+@pytest.mark.asyncio
+async def test_receive_audio_broadcasts_gemini_response():
+    """receive_audio はGeminiに音声を渡し、テキスト応答をbroadcastする"""
+    engine = AgitationEngine()
+    client = _FakeClient(["占いの応答です。", "動揺データ踏まえた追い込み。"])
+    manager = TwoStageSessionManager(engine, client=client)
+
+    received = []
+
+    async def fake_broadcast(data):
+        received.append(data)
+
+    manager.set_broadcast_callback(fake_broadcast)
+    await manager.start_session()
+    await manager.receive_audio(b"fake_wav_bytes", "audio/wav")
+
+    text = "".join(m["text"] for m in received if m["type"] == "ai_text")
+    assert "占いの応答です。" in text
+    assert client.models.calls == 2
+
+
+@pytest.mark.asyncio
+async def test_receive_audio_without_callback_is_noop():
+    """broadcast callback が未設定なら何も起きない"""
+    engine = AgitationEngine()
+    client = _FakeClient(["unused", "unused"])
+    manager = TwoStageSessionManager(engine, client=client)
+
+    await manager.start_session()
+    await manager.receive_audio(b"fake_wav_bytes", "audio/wav")
+
+    assert client.models.calls == 0

@@ -7,6 +7,7 @@ Gemini通常APIを使った2段階応答セッション管理。
 from __future__ import annotations
 
 import asyncio
+import base64
 import os
 
 from google import genai
@@ -79,6 +80,53 @@ class TwoStageSessionManager:
                 ]
             )
             # 履歴肥大化を防ぐ
+            self._history = self._history[-12:]
+
+    async def receive_audio(self, audio_bytes: bytes, mime_type: str = "audio/wav"):
+        """ユーザー音声を受け取りGeminiに渡して2段階応答を生成・broadcast"""
+        if not self._broadcast_callback:
+            return
+
+        async with self._lock:
+            audio_part = {
+                "inline_data": {
+                    "mime_type": mime_type,
+                    "data": base64.b64encode(audio_bytes).decode(),
+                }
+            }
+
+            stage1_prompt = (
+                "占いの続きを一言ください。"
+                "まだ相手を煽りすぎず、神秘的なトーンを維持してください。"
+            )
+            contents1 = self._history + [
+                {"role": "user", "parts": [audio_part, {"text": stage1_prompt}]}
+            ]
+            stage1_text = await self._generate_text(contents1, STAGE1_SYSTEM)
+            if not stage1_text:
+                stage1_text = "手のひらに、まだ語られていない流れが見えます。"
+
+            snapshot = self.engine.snapshot()
+            stage2_prompt = (
+                f"動揺データ: level={snapshot['level']}, trend={snapshot['trend']}。"
+                f"直前の発言: {stage1_text}"
+                "この情報を踏まえ、当たっている実感を強める補足をしてください。"
+            )
+            contents2 = self._history + [
+                {"role": "user", "parts": [{"text": stage2_prompt}]}
+            ]
+            stage2_text = await self._generate_text(contents2, STAGE2_SYSTEM)
+            if not stage2_text:
+                stage2_text = f"揺れは{snapshot['level']}%です。反応がもう答えになっています。"
+
+            await self._broadcast_text(stage1_text)
+            await self._broadcast_text(" ")
+            await self._broadcast_text(stage2_text)
+
+            self._history.extend([
+                {"role": "user", "parts": [audio_part]},
+                {"role": "model", "parts": [{"text": f"{stage1_text} {stage2_text}"}]},
+            ])
             self._history = self._history[-12:]
 
     async def _generate_text(self, contents: list, system_instruction: str) -> str:
