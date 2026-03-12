@@ -41,10 +41,13 @@ class TwoStageSessionManager:
         self._broadcast_callback = callback
 
     async def start_session(self):
-        """セッション開始時にAIがイントロを生成してbroadcastする。"""
+        """初期化のみ。"""
+        return
+
+    async def send_intro(self):
+        """フロントエンド接続時にGeminiでイントロを生成して送信する。"""
         if not self._broadcast_callback:
             return
-
         intro_prompt = (
             "手相占いを始めます。相手の手を見て、神秘的なイントロを2文で述べてください。"
         )
@@ -52,10 +55,8 @@ class TwoStageSessionManager:
         intro_text = await self._generate_text(contents, STAGE1_SYSTEM)
         if not intro_text:
             intro_text = "あなたの手のひらには、深い運命の線が刻まれています。今日は特別なものが見えます。"
-
         await self._broadcast_text(intro_text)
         await self._broadcast_callback({"type": "ai_turn_end"})
-
         self._history.extend([
             {"role": "user", "parts": [{"text": intro_prompt}]},
             {"role": "model", "parts": [{"text": intro_text}]},

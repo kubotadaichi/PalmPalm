@@ -26,7 +26,7 @@ class _FakeClient:
 @pytest.mark.asyncio
 async def test_send_push_broadcasts_two_stage_text():
     engine = AgitationEngine()
-    client = _FakeClient(["intro message", "stage1 message", "stage2 follow up"])
+    client = _FakeClient(["stage1 message", "stage2 follow up"])
     manager = TwoStageSessionManager(engine, client=client)
 
     received = []
@@ -41,7 +41,7 @@ async def test_send_push_broadcasts_two_stage_text():
     text = "".join(m["text"] for m in received if m["type"] == "ai_text")
     assert "stage1 message" in text
     assert "stage2 follow up" in text
-    assert client.models.calls == 3
+    assert client.models.calls == 2
 
 
 @pytest.mark.asyncio
@@ -60,7 +60,7 @@ async def test_send_push_without_callback_is_noop():
 async def test_receive_audio_broadcasts_gemini_response():
     """receive_audio はGeminiに音声を渡し、テキスト応答をbroadcastする"""
     engine = AgitationEngine()
-    client = _FakeClient(["イントロです。", "占いの応答です。", "動揺データ踏まえた追い込み。"])
+    client = _FakeClient(["占いの応答です。", "動揺データ踏まえた追い込み。"])
     manager = TwoStageSessionManager(engine, client=client)
 
     received = []
@@ -74,7 +74,7 @@ async def test_receive_audio_broadcasts_gemini_response():
 
     text = "".join(m["text"] for m in received if m["type"] == "ai_text")
     assert "占いの応答です。" in text
-    assert client.models.calls == 3
+    assert client.models.calls == 2
 
 
 @pytest.mark.asyncio
@@ -94,7 +94,7 @@ async def test_receive_audio_without_callback_is_noop():
 async def test_receive_audio_sends_ai_turn_end():
     """receive_audio の応答後に ai_turn_end がbroadcastされる"""
     engine = AgitationEngine()
-    client = _FakeClient(["intro text", "stage1 text", "stage2 text"])
+    client = _FakeClient(["stage1 text", "stage2 text"])
     manager = TwoStageSessionManager(engine, client=client)
 
     received = []
@@ -114,7 +114,7 @@ async def test_receive_audio_sends_ai_turn_end():
 
 @pytest.mark.asyncio
 async def test_start_session_sends_intro_and_ai_turn_end():
-    """start_session はイントロテキストと ai_turn_end をbroadcastする"""
+    """send_intro はイントロテキストと ai_turn_end をbroadcastする"""
     engine = AgitationEngine()
     client = _FakeClient(["手相には深い線が刻まれています。運命が動いています。"])
     manager = TwoStageSessionManager(engine, client=client)
@@ -126,6 +126,7 @@ async def test_start_session_sends_intro_and_ai_turn_end():
 
     manager.set_broadcast_callback(fake_broadcast)
     await manager.start_session()
+    await manager.send_intro()
 
     assert any(m["type"] == "ai_text" for m in received), "イントロテキストが届いていない"
     assert any(m["type"] == "ai_turn_end" for m in received), "ai_turn_end が届いていない"

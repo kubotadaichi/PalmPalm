@@ -103,6 +103,7 @@ async def frontend_ws(websocket: WebSocket):
     await websocket.accept()
     frontend_clients.append(websocket)
     print(f"[Frontend WS] Client connected (total: {len(frontend_clients)})")
+    asyncio.create_task(gemini.send_intro())
     try:
         while True:
             await websocket.receive_text()  # keep-alive ping受信

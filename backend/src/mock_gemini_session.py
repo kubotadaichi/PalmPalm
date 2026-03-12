@@ -40,18 +40,20 @@ class MockGeminiSessionManager:
         self._broadcast_callback = callback
 
     async def start_session(self):
-        """イントロ（台本1エントリ）を送信してからユーザーターンへ渡す。
-        振動モックはバックグラウンドで継続する。"""
+        """バックグラウンドの振動モックを起動する。"""
         self._running = True
         self._vibration_task = asyncio.create_task(self._vibration_loop())
 
+    async def send_intro(self):
+        """フロントエンド接続時にイントロを送信する。"""
+        if not self._broadcast_callback:
+            return
         entry = _READING_SCRIPT[0]
-        if self._broadcast_callback:
-            await self._broadcast_callback({"type": "ai_audio", "url": entry["audio"]})
-            for chunk in _chunks(entry["text"], size=8):
-                await self._broadcast_callback({"type": "ai_text", "text": chunk})
-                await asyncio.sleep(0.05)
-            await self._broadcast_callback({"type": "ai_turn_end"})
+        await self._broadcast_callback({"type": "ai_audio", "url": entry["audio"]})
+        for chunk in _chunks(entry["text"], size=8):
+            await self._broadcast_callback({"type": "ai_text", "text": chunk})
+            await asyncio.sleep(0.05)
+        await self._broadcast_callback({"type": "ai_turn_end"})
 
     def stop(self):
         """テスト用にループを止める"""

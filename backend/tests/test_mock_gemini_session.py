@@ -9,7 +9,7 @@ from src.mock_gemini_session import MockGeminiSessionManager
 
 @pytest.mark.asyncio
 async def test_start_session_calls_broadcast():
-    """start_session後、ai_textがbroadcastされる"""
+    """send_intro後、ai_textがbroadcastされる"""
     engine = AgitationEngine()
     mock = MockGeminiSessionManager(engine)
 
@@ -20,9 +20,7 @@ async def test_start_session_calls_broadcast():
 
     mock.set_broadcast_callback(fake_broadcast)
     await mock.start_session()
-
-    # 少し待ってメッセージが届くか確認
-    await asyncio.sleep(0.1)
+    await mock.send_intro()
     mock.stop()
 
     assert any(m["type"] == "ai_text" for m in received)
@@ -59,7 +57,7 @@ async def test_set_broadcast_callback():
     cb = AsyncMock()
     mock.set_broadcast_callback(cb)
     await mock.start_session()
-    await asyncio.sleep(0.1)
+    await mock.send_intro()
     mock.stop()
 
     assert cb.called
@@ -78,7 +76,7 @@ async def test_start_session_sends_ai_audio():
 
     mock.set_broadcast_callback(fake_broadcast)
     await mock.start_session()
-    await asyncio.sleep(0.3)
+    await mock.send_intro()
     mock.stop()
 
     audio_msgs = [m for m in received if m["type"] == "ai_audio"]
@@ -136,7 +134,7 @@ async def test_receive_audio_broadcasts_script_line():
 
 @pytest.mark.asyncio
 async def test_start_session_sends_ai_turn_end():
-    """start_session後に ai_turn_end がbroadcastされる"""
+    """send_intro後に ai_turn_end がbroadcastされる"""
     engine = AgitationEngine()
     mock = MockGeminiSessionManager(engine)
 
@@ -147,6 +145,7 @@ async def test_start_session_sends_ai_turn_end():
 
     mock.set_broadcast_callback(fake_broadcast)
     await mock.start_session()
+    await mock.send_intro()
     mock.stop()
 
     assert any(m["type"] == "ai_turn_end" for m in received), \
