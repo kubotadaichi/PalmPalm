@@ -93,13 +93,8 @@ async def sensor_ws(websocket: WebSocket):
                     "level": snapshot["level"],
                     "trend": snapshot["trend"]
                 })
-                # 急上昇チェック: Push割り込みを送る
-                if engine.is_spike():
-                    asyncio.create_task(
-                        gemini.send_push(snapshot["level"], snapshot["trend"])
-                    )
     except WebSocketDisconnect:
-        print("[Sensor WS] Raspberry Pi disconnected")
+        print("[Sensor WS] Disconnected")
 
 
 @app.websocket("/ws/frontend")
@@ -121,5 +116,7 @@ async def frontend_ws(websocket: WebSocket):
 async def receive_audio_endpoint(request: Request):
     """フロントエンドからの音声データを受け取りGeminiに渡す"""
     audio_bytes = await request.body()
-    asyncio.create_task(gemini.receive_audio(audio_bytes, "audio/wav"))
+    raw_content_type = request.headers.get("content-type", "audio/webm")
+    mime_type = raw_content_type.split(";")[0].strip() or "audio/webm"
+    asyncio.create_task(gemini.receive_audio(audio_bytes, mime_type))
     return {"status": "accepted"}
