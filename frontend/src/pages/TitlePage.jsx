@@ -8,7 +8,7 @@ export function TitlePage({ onStart }) {
         onClick={onStart}
         className="px-10 py-4 bg-white text-gray-900 rounded font-bold text-lg hover:bg-gray-200 transition-colors"
       >
-        スタート
+        start
       </button>
     </div>
   )
