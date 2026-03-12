@@ -1,0 +1,4 @@
+*.m4a
+*.aiff
+*.mp3
+!generate.sh
