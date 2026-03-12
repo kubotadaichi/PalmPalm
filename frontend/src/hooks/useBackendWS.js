@@ -1,16 +1,18 @@
-// frontend/src/hooks/useBackendWS.js
 import { useEffect, useRef, useState } from 'react'
 
 export function useBackendWS() {
   const [agitationLevel, setAgitationLevel] = useState(0)
   const [agitationTrend, setAgitationTrend] = useState('stable')
   const [aiText, setAiText] = useState('')
+  const [aiAudioUrl, setAiAudioUrl] = useState(null)
   const [connected, setConnected] = useState(false)
   const wsRef = useRef(null)
 
   useEffect(() => {
-    const url = import.meta.env.VITE_BACKEND_WS_URL ?? 'ws://localhost:8000/ws/frontend'
-    const ws = new WebSocket(url)
+    const wsUrl = import.meta.env.VITE_BACKEND_WS_URL ?? 'ws://localhost:8000/ws/frontend'
+    const httpBase = wsUrl.replace(/^ws/, 'http').replace(/\/ws\/.*$/, '')
+
+    const ws = new WebSocket(wsUrl)
     wsRef.current = ws
 
     ws.onopen = () => setConnected(true)
@@ -25,6 +27,8 @@ export function useBackendWS() {
           setAgitationTrend(msg.trend ?? 'stable')
         } else if (msg.type === 'ai_text') {
           setAiText((prev) => prev + msg.text)
+        } else if (msg.type === 'ai_audio') {
+          setAiAudioUrl(httpBase + msg.url)
         }
       } catch {
         // ignore parse errors
@@ -36,5 +40,5 @@ export function useBackendWS() {
     }
   }, [])
 
-  return { agitationLevel, agitationTrend, aiText, connected }
+  return { agitationLevel, agitationTrend, aiText, aiAudioUrl, connected }
 }
