@@ -101,8 +101,10 @@ export function useVAD({ httpBase, maxSeconds = DEFAULT_MAX_SECONDS, turn, onRec
           type: recorder.mimeType || 'audio/webm',
         })
         chunksRef.current = []
-        await sendRecordedAudio(blob)
-        onRecordingComplete?.()
+        if (blob.size > 0) {
+          await sendRecordedAudio(blob)
+          onRecordingComplete?.()
+        }
       }
 
       recorder.start()
