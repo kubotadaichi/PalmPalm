@@ -32,9 +32,9 @@ class MockGeminiSessionManager:
     def __init__(self, agitation_engine: AgitationEngine):
         self.engine = agitation_engine
         self._broadcast_callback = None
-        self._task: asyncio.Task | None = None
         self._vibration_task: asyncio.Task | None = None
         self._running = False
+        self._audio_idx: int = 0
 
     def set_broadcast_callback(self, callback):
         self._broadcast_callback = callback
@@ -56,9 +56,6 @@ class MockGeminiSessionManager:
     def stop(self):
         """テスト用にループを止める"""
         self._running = False
-        if self._task:
-            self._task.cancel()
-            self._task = None
         if self._vibration_task:
             self._vibration_task.cancel()
             self._vibration_task = None
@@ -78,8 +75,6 @@ class MockGeminiSessionManager:
         """ユーザー音声を受け取り、台本の次のセリフを返す（音声内容は無視）"""
         if not self._broadcast_callback:
             return
-        if not hasattr(self, '_audio_idx'):
-            self._audio_idx = 0
         entry = _READING_SCRIPT[self._audio_idx % len(_READING_SCRIPT)]
         self._audio_idx += 1
         await self._broadcast_callback({"type": "ai_audio", "url": entry["audio"]})
