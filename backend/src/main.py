@@ -19,14 +19,14 @@ from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from dotenv import load_dotenv
 
 from .agitation_engine import AgitationEngine
-from .gemini_session import GeminiSessionManager
 from .mock_gemini_session import MockGeminiSessionManager
+from .two_stage_session import TwoStageSessionManager
 
 load_dotenv()
 
 engine = AgitationEngine(window_seconds=10, max_pulses=20)
 _mock_mode = os.getenv("MOCK_MODE", "false").lower() == "true"
-gemini = MockGeminiSessionManager(engine) if _mock_mode else GeminiSessionManager(engine)
+gemini = MockGeminiSessionManager(engine) if _mock_mode else TwoStageSessionManager(engine)
 frontend_clients: list[WebSocket] = []
 
 
@@ -49,9 +49,9 @@ async def lifespan(app: FastAPI):
     else:
         try:
             await gemini.start_session()
-            print("[Backend] Gemini Live session started")
+            print("[Backend] Two-stage Gemini session manager started")
         except Exception as e:
-            print(f"[Backend] Failed to start Gemini session: {e}")
+            print(f"[Backend] Failed to start two-stage session manager: {e}")
     yield
 
 
