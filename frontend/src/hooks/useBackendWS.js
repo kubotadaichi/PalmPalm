@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 
 export function useBackendWS() {
   const [agitationLevel, setAgitationLevel] = useState(0)
@@ -6,6 +6,7 @@ export function useBackendWS() {
   const [aiText, setAiText] = useState('')
   const [aiAudioUrl, setAiAudioUrl] = useState(null)
   const [connected, setConnected] = useState(false)
+  const [turn, setTurn] = useState('ai')
   const wsRef = useRef(null)
 
   useEffect(() => {
@@ -29,6 +30,9 @@ export function useBackendWS() {
           setAiText((prev) => prev + msg.text)
         } else if (msg.type === 'ai_audio') {
           setAiAudioUrl(httpBase + msg.url)
+        } else if (msg.type === 'ai_turn_end') {
+          setTurn('user')
+          setAiText('')
         }
       } catch {
         // ignore parse errors
@@ -40,5 +44,7 @@ export function useBackendWS() {
     }
   }, [])
 
-  return { agitationLevel, agitationTrend, aiText, aiAudioUrl, connected }
+  const setTurnToAi = useCallback(() => setTurn('ai'), [])
+
+  return { agitationLevel, agitationTrend, aiText, aiAudioUrl, connected, turn, setTurnToAi }
 }
