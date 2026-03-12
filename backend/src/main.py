@@ -12,9 +12,7 @@ PalmPalm バックエンド（FastAPI）
   MOCK_MODE       - "true" のときランダム振動モックを有効化
 """
 import asyncio
-import json
 import os
-import random
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
@@ -22,11 +20,13 @@ from dotenv import load_dotenv
 
 from .agitation_engine import AgitationEngine
 from .gemini_session import GeminiSessionManager
+from .mock_gemini_session import MockGeminiSessionManager
 
 load_dotenv()
 
 engine = AgitationEngine(window_seconds=10, max_pulses=20)
-gemini = GeminiSessionManager(engine)
+_mock_mode = os.getenv("MOCK_MODE", "false").lower() == "true"
+gemini = MockGeminiSessionManager(engine) if _mock_mode else GeminiSessionManager(engine)
 frontend_clients: list[WebSocket] = []
 
 
@@ -40,32 +40,18 @@ async def broadcast_to_frontend(data: dict):
                 frontend_clients.remove(ws)
 
 
-async def mock_vibration_loop():
-    """MOCK_MODE用: ランダムに振動イベントを発生させてフロントに配信"""
-    while True:
-        await asyncio.sleep(random.uniform(0.5, 2.0))
-        engine.record_pulse()
-        snapshot = engine.snapshot()
-        await broadcast_to_frontend({
-            "type": "agitation_update",
-            "level": snapshot["level"],
-            "trend": snapshot["trend"]
-        })
-
-
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     gemini.set_broadcast_callback(broadcast_to_frontend)
-    mock_mode = os.getenv("MOCK_MODE", "false").lower() == "true"
-    if not mock_mode:
+    if _mock_mode:
+        await gemini.start_session()
+        print("[Backend] Mock mode - MockGeminiSessionManager started")
+    else:
         try:
             await gemini.start_session()
             print("[Backend] Gemini Live session started")
         except Exception as e:
             print(f"[Backend] Failed to start Gemini session: {e}")
-    else:
-        asyncio.create_task(mock_vibration_loop())
-        print("[Backend] Mock mode enabled - random vibration events active")
     yield
 
 
