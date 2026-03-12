@@ -15,7 +15,7 @@ import asyncio
 import os
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI, WebSocket, WebSocketDisconnect
+from fastapi import FastAPI, Request, WebSocket, WebSocketDisconnect
 from fastapi.staticfiles import StaticFiles
 from fastapi.middleware.cors import CORSMiddleware
 from dotenv import load_dotenv
@@ -62,7 +62,7 @@ app = FastAPI(lifespan=lifespan)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
-    allow_methods=["GET"],
+    allow_methods=["GET", "POST"],
     allow_headers=["*"],
 )
 app.mount("/audio", StaticFiles(directory="assets/audio"), name="audio")
@@ -115,3 +115,11 @@ async def frontend_ws(websocket: WebSocket):
         if websocket in frontend_clients:
             frontend_clients.remove(websocket)
         print(f"[Frontend WS] Client disconnected (total: {len(frontend_clients)})")
+
+
+@app.post("/api/audio")
+async def receive_audio_endpoint(request: Request):
+    """フロントエンドからの音声データを受け取りGeminiに渡す"""
+    audio_bytes = await request.body()
+    asyncio.create_task(gemini.receive_audio(audio_bytes, "audio/wav"))
+    return {"status": "accepted"}
