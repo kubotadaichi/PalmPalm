@@ -8,7 +8,7 @@ import { EndPage } from './pages/EndPage'
 
 export default function App() {
   const [page, setPage] = useState('title')
-  const { agitationLevel, aiText, connected } = useBackendWS()
+  const { agitationLevel, aiText, aiAudioUrl, connected } = useBackendWS()
 
   return (
     <VibrationEffect agitationLevel={agitationLevel}>
@@ -23,6 +23,7 @@ export default function App() {
         <SessionPage
           agitationLevel={agitationLevel}
           aiText={aiText}
+          aiAudioUrl={aiAudioUrl}
           onEnd={() => setPage('end')}
         />
       )}

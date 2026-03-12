@@ -1,11 +1,12 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { KirbyMock } from '../components/KirbyMock'
 
 const SESSION_SECONDS = 120
 
-export function SessionPage({ agitationLevel, aiText, onEnd }) {
+export function SessionPage({ agitationLevel, aiText, aiAudioUrl, onEnd }) {
   const [timeLeft, setTimeLeft] = useState(SESSION_SECONDS)
   const isTalking = aiText.length > 0
+  const audioRef = useRef(null)
 
   useEffect(() => {
     if (timeLeft <= 0) {
@@ -15,6 +16,18 @@ export function SessionPage({ agitationLevel, aiText, onEnd }) {
     const t = setTimeout(() => setTimeLeft((s) => s - 1), 1000)
     return () => clearTimeout(t)
   }, [timeLeft, onEnd])
+
+  useEffect(() => {
+    if (!aiAudioUrl) return
+    if (audioRef.current) {
+      audioRef.current.pause()
+    }
+    const audio = new Audio(aiAudioUrl)
+    audioRef.current = audio
+    audio.play().catch(() => {
+      // autoplay policy に引っかかった場合は無視
+    })
+  }, [aiAudioUrl])
 
   return (
     <div className="flex flex-col items-center justify-center h-screen bg-gray-800 text-white relative">
