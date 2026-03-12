@@ -81,6 +81,7 @@ class MockGeminiSessionManager:
         for chunk in _chunks(entry["text"], size=8):
             await self._broadcast_callback({"type": "ai_text", "text": chunk})
             await asyncio.sleep(0.05)
+        await self._broadcast_callback({"type": "ai_turn_end"})
 
     async def _vibration_loop(self):
         """ランダムに振動イベントを発生させてフロントに配信"""

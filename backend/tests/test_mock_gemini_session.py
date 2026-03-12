@@ -151,3 +151,28 @@ async def test_start_session_sends_ai_turn_end():
 
     assert any(m["type"] == "ai_turn_end" for m in received), \
         "ai_turn_end が届いていない"
+
+
+@pytest.mark.asyncio
+async def test_receive_audio_sends_ai_turn_end():
+    """receive_audio の応答後に ai_turn_end がbroadcastされる"""
+    engine = AgitationEngine()
+    mock = MockGeminiSessionManager(engine)
+
+    received = []
+
+    async def fake_broadcast(data):
+        received.append(data)
+
+    mock.set_broadcast_callback(fake_broadcast)
+    await mock.start_session()
+    mock.stop()
+    received.clear()
+
+    await mock.receive_audio(b"dummy", "audio/wav")
+
+    assert any(m["type"] == "ai_turn_end" for m in received), \
+        "receive_audio 後に ai_turn_end が届いていない"
+    # ai_turn_end はテキスト送信の後でなければならない
+    types = [m["type"] for m in received]
+    assert types[-1] == "ai_turn_end", "ai_turn_end が最後のメッセージでない"
