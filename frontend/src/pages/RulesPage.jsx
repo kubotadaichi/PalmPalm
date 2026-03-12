@@ -7,7 +7,7 @@ const STEPS = [
 ]
 
 export function RulesPage({ onReady }) {
-  const [countdown, setCountdown] = useState(30)
+  const [countdown, setCountdown] = useState(10)
 
   useEffect(() => {
     if (countdown <= 0) {

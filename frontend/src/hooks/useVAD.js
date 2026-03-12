@@ -44,9 +44,17 @@ function float32ToWav(samples, sampleRate = 16000) {
  */
 export function useVAD({ httpBase }) {
   const [isSpeaking, setIsSpeaking] = useState(false)
+  const [vadError, setVadError] = useState(null)
 
   useMicVAD({
     startOnLoad: true,
+    workersOptions: {
+      url: '/vad.worklet.bundle.min.js',
+    },
+    modelURL: '/silero_vad_v5.onnx',
+    ortConfig: (ort) => {
+      ort.env.wasm.wasmPaths = '/'
+    },
     onSpeechStart: () => {
       setIsSpeaking(true)
     },
@@ -63,7 +71,11 @@ export function useVAD({ httpBase }) {
         // ネットワークエラーは無視（セッション中断を防ぐ）
       }
     },
+    onError: (e) => {
+      console.error('[VAD] error:', e)
+      setVadError(e?.message ?? String(e))
+    },
   })
 
-  return { isSpeaking }
+  return { isSpeaking, vadError }
 }

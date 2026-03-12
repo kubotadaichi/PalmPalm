@@ -8,7 +8,7 @@ export function SessionPage({ agitationLevel, aiText, aiAudioUrl, httpBase, onEn
   const [timeLeft, setTimeLeft] = useState(SESSION_SECONDS)
   const isTalking = aiText.length > 0
   const audioRef = useRef(null)
-  const { isSpeaking } = useVAD({ httpBase })
+  const { isSpeaking, vadError } = useVAD({ httpBase })
 
   useEffect(() => {
     if (timeLeft <= 0) {
@@ -39,6 +39,11 @@ export function SessionPage({ agitationLevel, aiText, aiAudioUrl, httpBase, onEn
       <div className="absolute top-4 left-4 text-xs text-gray-500">
         動揺率: {agitationLevel}%
       </div>
+      {vadError && (
+        <div className="absolute bottom-16 left-1/2 -translate-x-1/2 text-xs text-yellow-400 bg-black/60 px-3 py-1 rounded max-w-xs text-center">
+          VAD: {vadError}
+        </div>
+      )}
       {isSpeaking && (
         <div className="absolute bottom-4 left-1/2 -translate-x-1/2 text-sm text-red-400 bg-black/60 px-3 py-1 rounded">
           🎤 録音中...
