@@ -26,7 +26,7 @@ services:
       - ./frontend/vite.config.js:/app/vite.config.js
       # node_modules はコンテナ内のものを使う（ホストにマウントしない）
     environment:
-      - VITE_BACKEND_WS_URL=ws://host.docker.internal:8000/ws/frontend
+      - VITE_BACKEND_WS_URL=ws://localhost:8000/ws/frontend
     extra_hosts:
       - "host.docker.internal:host-gateway"
     depends_on:
