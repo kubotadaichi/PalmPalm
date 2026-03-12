@@ -63,3 +63,46 @@ async def test_set_broadcast_callback():
     mock.stop()
 
     assert cb.called
+
+
+@pytest.mark.asyncio
+async def test_start_session_sends_ai_audio():
+    """台本テキストに対応する ai_audio が broadcast される"""
+    engine = AgitationEngine()
+    mock = MockGeminiSessionManager(engine)
+
+    received = []
+
+    async def fake_broadcast(data):
+        received.append(data)
+
+    mock.set_broadcast_callback(fake_broadcast)
+    await mock.start_session()
+    await asyncio.sleep(0.3)
+    mock.stop()
+
+    audio_msgs = [m for m in received if m["type"] == "ai_audio"]
+    assert len(audio_msgs) >= 1
+    assert audio_msgs[0]["url"].startswith("/audio/line")
+    assert audio_msgs[0]["url"].endswith(".m4a")
+
+
+@pytest.mark.asyncio
+async def test_send_push_sends_ai_audio():
+    """send_push で spike 用 ai_audio が broadcast される"""
+    engine = AgitationEngine()
+    mock = MockGeminiSessionManager(engine)
+
+    received = []
+
+    async def fake_broadcast(data):
+        received.append(data)
+
+    mock.set_broadcast_callback(fake_broadcast)
+    await mock.start_session()
+    await mock.send_push(level=80, trend="rising")
+    await asyncio.sleep(0.1)
+    mock.stop()
+
+    audio_msgs = [m for m in received if m["type"] == "ai_audio"]
+    assert any(m["url"].startswith("/audio/spike") for m in audio_msgs)
