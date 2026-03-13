@@ -46,7 +46,11 @@ export function useSession() {
   useEffect(() => {
     const es = new EventSource(`${HTTP_BASE}/api/session/start`)
     es.onmessage = (e) => {
-      try { handleEvent(JSON.parse(e.data)) } catch {}
+      try {
+        const event = JSON.parse(e.data)
+        handleEvent(event)
+        if (event.type === 'turn_end') es.close()
+      } catch {}
     }
     es.onerror = () => es.close()
     return () => es.close()

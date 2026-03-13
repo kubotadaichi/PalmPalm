@@ -12,6 +12,12 @@ services:
       - MOCK_MODE=false
       - GEMINI_API_KEY=${GEMINI_API_KEY:-dummy}
       - AGITATION_API_URL=http://raspberrypi.local:8001
+      - PYTHONUNBUFFERED=1
+    dns:
+      - 8.8.8.8
+      - 8.8.4.4
+    sysctls:
+      - net.ipv6.conf.all.disable_ipv6=1
     extra_hosts:
       - "host.docker.internal:host-gateway"
 

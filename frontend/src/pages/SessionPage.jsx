@@ -37,11 +37,12 @@ export function SessionPage({ aiText, aiAudioQueue, audioPlayedRef, turn, aiTurn
     audio.play().catch(() => setIsAudioPlaying(false))
   }, [aiAudioQueue, isAudioPlaying, audioPlayedRef])
 
-  // AI ターン終了 + 音声再生完了 → ユーザーターンへ
+  // AI ターン終了 + 音声再生完了（または音声なし）→ ユーザーターンへ
   useEffect(() => {
-    if (aiTurnEnded && !isAudioPlaying && aiAudioQueue.length > 0 && audioPlayedRef.current >= aiAudioQueue.length) {
-      startUserTurn()
-    }
+    if (!aiTurnEnded) return
+    const allPlayed = aiAudioQueue.length === 0 ||
+      (audioPlayedRef.current >= aiAudioQueue.length && !isAudioPlaying)
+    if (allPlayed) startUserTurn()
   }, [aiTurnEnded, isAudioPlaying, aiAudioQueue, audioPlayedRef, startUserTurn])
 
   return (

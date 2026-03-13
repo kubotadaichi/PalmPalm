@@ -19,6 +19,7 @@ from typing import AsyncGenerator
 import httpx
 from google import genai
 from google.genai import types
+from google.genai.types import HttpOptions
 
 MODEL = os.getenv("GEMINI_MODEL", "gemini-2.5-flash")
 TTS_MODEL = "gemini-2.5-flash-preview-tts"
@@ -43,7 +44,11 @@ class TwoStageSessionManager:
         self.agitation_api_url = agitation_api_url
         self.client = client or genai.Client(
             api_key=os.getenv("GEMINI_API_KEY"),
-            http_options={"timeout": 15},
+            http_options=HttpOptions(
+                timeout=30000,  # ms
+                httpx_client=httpx.Client(http2=False, timeout=30),
+                httpx_async_client=httpx.AsyncClient(http2=False, timeout=30),
+            ),
         )
         self._history: list[dict] = []
         self._lock = asyncio.Lock()
