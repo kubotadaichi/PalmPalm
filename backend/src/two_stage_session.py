@@ -101,14 +101,15 @@ class TwoStageSessionManager:
                 httpx_async_client=httpx.AsyncClient(http2=False, timeout=30),
             ),
         )
-        self._history: list[dict] = []  # {"user": str, "model": str} text-only
+        self._history: list[dict] = []  # Gemini API format: {"role": ..., "parts": [...]}
+        self._text_history: list[dict] = []  # {"user": str, "model": str} text-only
         self._phase: PhaseEnum = PhaseEnum.INTRO
         self._phase_turns: int = 0
         self._lock = asyncio.Lock()
 
     def _build_stage1_system(self) -> str:
         base = PHASE_CONFIG[self._phase]["system"]
-        recent = self._history[-4:]
+        recent = self._text_history[-4:]
         if not recent:
             return base
         history_lines = "\n".join(
@@ -209,6 +210,8 @@ class TwoStageSessionManager:
                 {"role": "model", "parts": [{"text": f"{stage1_text} {stage2_text}"}]},
             ])
             self._history = self._history[-12:]
+            self._text_history.append({"user": user_summary, "model": f"{stage1_text} {stage2_text}"})
+            self._text_history = self._text_history[-6:]
 
             yield {"type": "stage2", "text": stage2_text, "audio_url": stage2_url}
             yield {"type": "turn_end"}
