@@ -1,12 +1,10 @@
-import base64
 import io
 import wave
 from types import SimpleNamespace
-from unittest.mock import MagicMock, patch
+from unittest.mock import patch
 
 import pytest
 
-from src.agitation_engine import AgitationEngine
 from src.two_stage_session import TwoStageSessionManager, _pcm_to_wav_bytes, _save_tts_wav, _wav_duration
 
 
@@ -27,116 +25,70 @@ class _FakeClient:
         self.models = _FakeModels(responses)
 
 
+# --- intro() tests ---
+
 @pytest.mark.asyncio
-async def test_send_push_broadcasts_two_stage_text():
-    engine = AgitationEngine()
-    client = _FakeClient(["stage1 message", "stage2 follow up"])
-    manager = TwoStageSessionManager(engine, client=client)
+async def test_intro_yields_intro_and_turn_end():
+    client = _FakeClient(["神秘的なイントロ文です。"])
+    manager = TwoStageSessionManager(client=client)
+    manager._generate_tts = lambda text: _noop_tts(text)
 
-    received = []
+    events = []
+    async for event in manager.intro():
+        events.append(event)
 
-    async def fake_broadcast(data):
-        received.append(data)
-
-    manager.set_broadcast_callback(fake_broadcast)
-    await manager.start_session()
-    await manager.send_push(level=75, trend="rising")
-
-    text = "".join(m["text"] for m in received if m["type"] == "ai_text")
-    assert "stage1 message" in text
-    assert "stage2 follow up" in text
-    assert client.models.calls == 2
+    types = [e["type"] for e in events]
+    assert types == ["intro", "turn_end"]
+    assert "神秘的なイントロ文です。" in events[0]["text"]
 
 
 @pytest.mark.asyncio
-async def test_send_push_without_callback_is_noop():
-    engine = AgitationEngine()
-    client = _FakeClient(["unused-1", "unused-2"])
-    manager = TwoStageSessionManager(engine, client=client)
+async def test_intro_uses_fallback_text_on_empty_response():
+    client = _FakeClient([""])
+    manager = TwoStageSessionManager(client=client)
+    manager._generate_tts = lambda text: _noop_tts(text)
 
-    await manager.start_session()
-    await manager.send_push(level=60, trend="stable")
+    events = []
+    async for event in manager.intro():
+        events.append(event)
 
-    assert client.models.calls == 0
+    assert events[0]["type"] == "intro"
+    assert len(events[0]["text"]) > 0
 
 
-@pytest.mark.asyncio
-async def test_receive_audio_broadcasts_gemini_response():
-    """receive_audio はGeminiに音声を渡し、テキスト応答をbroadcastする"""
-    engine = AgitationEngine()
-    client = _FakeClient(["占いの応答です。", "動揺データ踏まえた追い込み。"])
-    manager = TwoStageSessionManager(engine, client=client)
-
-    received = []
-
-    async def fake_broadcast(data):
-        received.append(data)
-
-    manager.set_broadcast_callback(fake_broadcast)
-    await manager.start_session()
-    await manager.receive_audio(b"fake_wav_bytes", "audio/wav")
-
-    text = "".join(m["text"] for m in received if m["type"] == "ai_text")
-    assert "占いの応答です。" in text
-    assert client.models.calls == 2
-
+# --- receive_audio() tests ---
 
 @pytest.mark.asyncio
-async def test_receive_audio_without_callback_is_noop():
-    """broadcast callback が未設定なら何も起きない"""
-    engine = AgitationEngine()
-    client = _FakeClient(["unused", "unused"])
-    manager = TwoStageSessionManager(engine, client=client)
-
-    await manager.start_session()
-    await manager.receive_audio(b"fake_wav_bytes", "audio/wav")
-
-    assert client.models.calls == 0
-
-
-@pytest.mark.asyncio
-async def test_receive_audio_sends_ai_turn_end():
-    """receive_audio の応答後に ai_turn_end がbroadcastされる"""
-    engine = AgitationEngine()
+async def test_receive_audio_yields_stage1_stage2_turn_end():
     client = _FakeClient(["stage1 text", "stage2 text"])
-    manager = TwoStageSessionManager(engine, client=client)
+    manager = TwoStageSessionManager(client=client)
+    manager._generate_tts = lambda text: _noop_tts(text)
 
-    received = []
+    events = []
+    async for event in manager.receive_audio(b"fake_audio", "audio/webm"):
+        events.append(event)
 
-    async def fake_broadcast(data):
-        received.append(data)
-
-    manager.set_broadcast_callback(fake_broadcast)
-    await manager.start_session()
-    await manager.receive_audio(b"fake_wav", "audio/wav")
-
-    assert any(m["type"] == "ai_turn_end" for m in received), \
-        "ai_turn_end が届いていない"
-    types = [m["type"] for m in received]
-    assert types[-1] == "ai_turn_end", "ai_turn_end が最後のメッセージでない"
+    types = [e["type"] for e in events]
+    assert types == ["stage1", "stage2", "turn_end"]
+    assert events[0]["text"] == "stage1 text"
+    assert events[1]["text"] == "stage2 text"
 
 
 @pytest.mark.asyncio
-async def test_start_session_sends_intro_and_ai_turn_end():
-    """send_intro はイントロテキストと ai_turn_end をbroadcastする"""
-    engine = AgitationEngine()
-    client = _FakeClient(["手相には深い線が刻まれています。運命が動いています。"])
-    manager = TwoStageSessionManager(engine, client=client)
+async def test_receive_audio_fallback_on_empty_stage1():
+    client = _FakeClient(["", "stage2 text"])
+    manager = TwoStageSessionManager(client=client)
+    manager._generate_tts = lambda text: _noop_tts(text)
 
-    received = []
+    events = []
+    async for event in manager.receive_audio(b"fake_audio", "audio/webm"):
+        events.append(event)
 
-    async def fake_broadcast(data):
-        received.append(data)
+    assert events[0]["type"] == "stage1"
+    assert len(events[0]["text"]) > 0
 
-    manager.set_broadcast_callback(fake_broadcast)
-    await manager.start_session()
-    await manager.send_intro()
 
-    assert any(m["type"] == "ai_text" for m in received), "イントロテキストが届いていない"
-    assert any(m["type"] == "ai_turn_end" for m in received), "ai_turn_end が届いていない"
-    types = [m["type"] for m in received]
-    assert types[-1] == "ai_turn_end", "ai_turn_end が最後でない"
-
+# --- WAV helper tests ---
 
 def test_pcm_to_wav_bytes_creates_valid_wav():
     pcm = bytes(24000 * 2)  # 1秒分のサイレント PCM
@@ -164,3 +116,9 @@ def test_save_tts_wav_cleanup_old_files(tmp_path):
         for _ in range(21):
             _save_tts_wav(bytes(24000 * 2))
         assert len(list(tmp_path.glob("*.wav"))) <= 20
+
+
+# --- helpers ---
+
+async def _noop_tts(text: str):
+    return (None, 0.0)
