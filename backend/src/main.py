@@ -3,121 +3,77 @@
 PalmPalm バックエンド（FastAPI）
 
 エンドポイント:
-  GET  /health         - ヘルスチェック
-  WS   /ws/sensor      - ラズパイ振動センサー受信
-  WS   /ws/frontend    - フロントエンドへのリアルタイム配信
+  GET  /health              - ヘルスチェック
+  GET  /api/session/start   - SSE: イントロ生成（intro → turn_end）
+  POST /api/audio           - SSE: ユーザー音声 → stage1 → stage2 → turn_end
 
 環境変数:
-  GEMINI_API_KEY  - Gemini APIキー
-  MOCK_MODE       - "true" のときランダム振動モックを有効化
+  GEMINI_API_KEY      - Gemini API キー
+  GEMINI_MODEL        - テキスト生成モデル (default: gemini-2.5-flash)
+  AGITATION_API_URL   - ラズパイの agitation API ベース URL (例: http://raspberrypi.local:8001)
+  STAGE2_LEAD_SECONDS - stage1 終了 N 秒前に stage2 生成開始 (default: 3)
 """
-import asyncio
+import json
 import os
-from contextlib import asynccontextmanager
 
-from fastapi import FastAPI, Request, WebSocket, WebSocketDisconnect
-from fastapi.staticfiles import StaticFiles
+from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import StreamingResponse
+from fastapi.staticfiles import StaticFiles
 from dotenv import load_dotenv
 
-from .agitation_engine import AgitationEngine
-from .mock_gemini_session import MockGeminiSessionManager
 from .two_stage_session import TwoStageSessionManager
 
 load_dotenv()
 
-engine = AgitationEngine(window_seconds=10, max_pulses=20)
-_mock_mode = os.getenv("MOCK_MODE", "false").lower() == "true"
-gemini = MockGeminiSessionManager(engine) if _mock_mode else TwoStageSessionManager(engine)
-frontend_clients: list[WebSocket] = []
+gemini = TwoStageSessionManager()
 
-
-async def broadcast_to_frontend(data: dict):
-    """接続中の全フロントエンドクライアントにJSONを送信"""
-    for ws in frontend_clients[:]:
-        try:
-            await ws.send_json(data)
-        except Exception:
-            if ws in frontend_clients:
-                frontend_clients.remove(ws)
-
-
-@asynccontextmanager
-async def lifespan(app: FastAPI):
-    gemini.set_broadcast_callback(broadcast_to_frontend)
-    if _mock_mode:
-        await gemini.start_session()
-        print("[Backend] Mock mode - MockGeminiSessionManager started")
-    else:
-        try:
-            await gemini.start_session()
-            print("[Backend] Two-stage Gemini session manager started")
-        except Exception as e:
-            print(f"[Backend] Failed to start two-stage session manager: {e}")
-    yield
-
-
-app = FastAPI(lifespan=lifespan)
-
+app = FastAPI()
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
-    allow_methods=["GET", "POST"],
+    allow_methods=["GET", "POST", "OPTIONS"],
     allow_headers=["*"],
 )
 app.mount("/audio", StaticFiles(directory="assets/audio"), name="audio")
 
 
+def _sse(event: dict) -> str:
+    return f"data: {json.dumps(event, ensure_ascii=False)}\n\n"
+
+
 @app.get("/health")
 async def health():
-    return {
-        "status": "ok",
-        "mock_mode": os.getenv("MOCK_MODE", "false").lower() == "true",
-        "frontend_clients": len(frontend_clients)
-    }
+    return {"status": "ok"}
 
 
-@app.websocket("/ws/sensor")
-async def sensor_ws(websocket: WebSocket):
-    """ラズパイからの振動データを受信する"""
-    await websocket.accept()
-    print("[Sensor WS] Raspberry Pi connected")
-    try:
-        while True:
-            data = await websocket.receive_text()
-            if data.strip() == "1":
-                engine.record_pulse()
-                snapshot = engine.snapshot()
-                await broadcast_to_frontend({
-                    "type": "agitation_update",
-                    "level": snapshot["level"],
-                    "trend": snapshot["trend"]
-                })
-    except WebSocketDisconnect:
-        print("[Sensor WS] Disconnected")
+@app.get("/api/session/start")
+async def session_start():
+    """イントロを SSE で返す。EventSource で接続可能。"""
+    async def generate():
+        async for event in gemini.intro():
+            yield _sse(event)
 
-
-@app.websocket("/ws/frontend")
-async def frontend_ws(websocket: WebSocket):
-    """フロントエンドへのリアルタイム配信WebSocket"""
-    await websocket.accept()
-    frontend_clients.append(websocket)
-    print(f"[Frontend WS] Client connected (total: {len(frontend_clients)})")
-    asyncio.create_task(gemini.send_intro())
-    try:
-        while True:
-            await websocket.receive_text()  # keep-alive ping受信
-    except WebSocketDisconnect:
-        if websocket in frontend_clients:
-            frontend_clients.remove(websocket)
-        print(f"[Frontend WS] Client disconnected (total: {len(frontend_clients)})")
+    return StreamingResponse(
+        generate(),
+        media_type="text/event-stream",
+        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+    )
 
 
 @app.post("/api/audio")
-async def receive_audio_endpoint(request: Request):
-    """フロントエンドからの音声データを受け取りGeminiに渡す"""
+async def receive_audio(request: Request):
+    """ユーザー音声を受け取り stage1→stage2 を SSE で返す。"""
     audio_bytes = await request.body()
-    raw_content_type = request.headers.get("content-type", "audio/webm")
-    mime_type = raw_content_type.split(";")[0].strip() or "audio/webm"
-    asyncio.create_task(gemini.receive_audio(audio_bytes, mime_type))
-    return {"status": "accepted"}
+    raw_ct = request.headers.get("content-type", "audio/webm")
+    mime_type = raw_ct.split(";")[0].strip() or "audio/webm"
+
+    async def generate():
+        async for event in gemini.receive_audio(audio_bytes, mime_type):
+            yield _sse(event)
+
+    return StreamingResponse(
+        generate(),
+        media_type="text/event-stream",
+        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+    )
