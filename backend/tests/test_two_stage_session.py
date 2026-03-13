@@ -15,17 +15,19 @@ from src.two_stage_session import PhaseEnum, PHASE_CONFIG
 
 
 def test_phase_enum_has_four_phases():
-    assert list(PhaseEnum) == [
-        PhaseEnum.INTRO, PhaseEnum.CORE, PhaseEnum.HYPE, PhaseEnum.CLIMAX
-    ]
+    assert set(PhaseEnum) == {PhaseEnum.INTRO, PhaseEnum.CORE, PhaseEnum.HYPE, PhaseEnum.CLIMAX}
+
 
 def test_phase_config_has_all_phases():
     for phase in PhaseEnum:
         cfg = PHASE_CONFIG[phase]
         assert "system" in cfg
-        assert "min_turns" in cfg or phase == PhaseEnum.CLIMAX
-        assert "max_turns" in cfg or phase == PhaseEnum.CLIMAX
-        assert "agitation_threshold" in cfg or phase == PhaseEnum.CLIMAX
+        if phase == PhaseEnum.CLIMAX:
+            assert set(cfg.keys()) == {"system"}
+        else:
+            assert "min_turns" in cfg
+            assert "max_turns" in cfg
+            assert "agitation_threshold" in cfg
 
 
 class _FakeModels:

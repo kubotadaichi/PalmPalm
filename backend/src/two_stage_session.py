@@ -28,6 +28,7 @@ class PhaseEnum(enum.Enum):
     HYPE = "hype"
     CLIMAX = "climax"
 
+# TODO(Task4): wire _phase into receive_audio via _build_stage1_system
 PHASE_CONFIG = {
     PhaseEnum.INTRO: {
         "system": (
