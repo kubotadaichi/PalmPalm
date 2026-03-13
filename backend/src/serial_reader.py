@@ -17,7 +17,7 @@ VIBRATION_KEYWORD = "Vibration detected!"
 
 
 def should_record_pulse(line: str) -> bool:
-    return VIBRATION_KEYWORD in line
+    return line == VIBRATION_KEYWORD
 
 
 def run(port: str, baud: int, server_url: str) -> None:

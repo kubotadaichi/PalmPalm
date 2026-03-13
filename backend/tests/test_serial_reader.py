@@ -15,5 +15,13 @@ def test_empty_line_does_not_trigger():
     assert should_record_pulse("") is False
 
 
+def test_numeric_line_does_not_trigger():
+    assert should_record_pulse("1") is False
+
+
+def test_partial_keyword_does_not_trigger():
+    assert should_record_pulse("Vibration detected! extra") is False
+
+
 def test_keyword_is_correct():
     assert VIBRATION_KEYWORD == "Vibration detected!"
