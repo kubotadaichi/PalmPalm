@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import asyncio
 import base64 as _b64
+import enum
 import io
 import os
 import uuid
@@ -20,6 +21,52 @@ import httpx
 from google import genai
 from google.genai import types
 from google.genai.types import HttpOptions
+
+class PhaseEnum(enum.Enum):
+    INTRO = "intro"
+    CORE = "core"
+    HYPE = "hype"
+    CLIMAX = "climax"
+
+PHASE_CONFIG = {
+    PhaseEnum.INTRO: {
+        "system": (
+            "あなたはAI手相占い師「ぱむぱむ」です。"
+            "初めて手を見る緊張感と神秘的な雰囲気を出しながら、"
+            "手相から何かが見えてきた…という前置きを2文で語ってください。"
+        ),
+        "min_turns": 1,
+        "max_turns": 3,
+        "agitation_threshold": 30,
+    },
+    PhaseEnum.CORE: {
+        "system": (
+            "あなたはAI手相占い師「ぱむぱむ」です。"
+            "運命線・感情線から、この人の性格・過去・隠された本音を"
+            "低くゆっくりと確信を持って2文で読み解いてください。"
+        ),
+        "min_turns": 2,
+        "max_turns": 4,
+        "agitation_threshold": 50,
+    },
+    PhaseEnum.HYPE: {
+        "system": (
+            "あなたはAI手相占い師「ぱむぱむ」です。"
+            "占いが当たっていると確信してきた。"
+            "相手の反応を指摘しながら、テンションを上げて1〜2文で煽ってください。"
+        ),
+        "min_turns": 1,
+        "max_turns": 3,
+        "agitation_threshold": 70,
+    },
+    PhaseEnum.CLIMAX: {
+        "system": (
+            "あなたはAI手相占い師「ぱむぱむ」です。"
+            "すべてが繋がった。感情的に畳み掛けて、"
+            "この占いが完全に正しいと断言する1〜2文を叫ぶように語ってください。"
+        ),
+    },
+}
 
 MODEL = os.getenv("GEMINI_MODEL", "gemini-2.5-flash")
 TTS_MODEL = "gemini-2.5-flash-preview-tts"

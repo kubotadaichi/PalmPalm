@@ -11,6 +11,21 @@ from src.two_stage_session import (
     _save_tts_wav,
     _wav_duration,
 )
+from src.two_stage_session import PhaseEnum, PHASE_CONFIG
+
+
+def test_phase_enum_has_four_phases():
+    assert list(PhaseEnum) == [
+        PhaseEnum.INTRO, PhaseEnum.CORE, PhaseEnum.HYPE, PhaseEnum.CLIMAX
+    ]
+
+def test_phase_config_has_all_phases():
+    for phase in PhaseEnum:
+        cfg = PHASE_CONFIG[phase]
+        assert "system" in cfg
+        assert "min_turns" in cfg or phase == PhaseEnum.CLIMAX
+        assert "max_turns" in cfg or phase == PhaseEnum.CLIMAX
+        assert "agitation_threshold" in cfg or phase == PhaseEnum.CLIMAX
 
 
 class _FakeModels:
