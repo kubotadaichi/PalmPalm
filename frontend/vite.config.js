@@ -7,6 +7,10 @@ export default defineConfig({
   server: {
     host: '0.0.0.0',
     port: 5173,
+    proxy: {
+      '/api': 'http://backend:8000',
+      '/audio': 'http://backend:8000',
+    },
     watch: {
       usePolling: true,  // Docker内でのファイル変更検知に必須
     },

@@ -7,7 +7,9 @@ import { EndPage } from './pages/EndPage'
 
 export default function App() {
   const [page, setPage] = useState('title')
-  const { aiText, aiAudioQueue, turn, aiTurnEnded, audioPlayedRef, startUserTurn, setTurnToAi, sendAudio } = useSession()
+  const { turn, aiText, vadError, timeLeft } = useSession({
+    enabled: page === 'session',
+  })
 
   return (
     <div>
@@ -15,14 +17,10 @@ export default function App() {
       {page === 'rules' && <RulesPage onReady={() => setPage('session')} />}
       {page === 'session' && (
         <SessionPage
-          aiText={aiText}
-          aiAudioQueue={aiAudioQueue}
-          audioPlayedRef={audioPlayedRef}
           turn={turn}
-          aiTurnEnded={aiTurnEnded}
-          startUserTurn={startUserTurn}
-          setTurnToAi={setTurnToAi}
-          sendAudio={sendAudio}
+          aiText={aiText}
+          vadError={vadError}
+          timeLeft={timeLeft}
           onEnd={() => setPage('end')}
         />
       )}

@@ -33,8 +33,6 @@ services:
       - ./frontend/index.html:/app/index.html
       - ./frontend/vite.config.js:/app/vite.config.js
       # node_modules はコンテナ内のものを使う（ホストにマウントしない）
-    environment:
-      - VITE_BACKEND_URL=http://localhost:8000
     extra_hosts:
       - "host.docker.internal:host-gateway"
     depends_on:

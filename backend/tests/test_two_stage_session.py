@@ -5,7 +5,12 @@ from unittest.mock import patch
 
 import pytest
 
-from src.two_stage_session import TwoStageSessionManager, _pcm_to_wav_bytes, _save_tts_wav, _wav_duration
+from src.two_stage_session import (
+    TwoStageSessionManager,
+    _pcm_to_wav_bytes,
+    _save_tts_wav,
+    _wav_duration,
+)
 
 
 class _FakeModels:
@@ -23,37 +28,6 @@ class _FakeModels:
 class _FakeClient:
     def __init__(self, responses: list[str]):
         self.models = _FakeModels(responses)
-
-
-# --- intro() tests ---
-
-@pytest.mark.asyncio
-async def test_intro_yields_intro_and_turn_end():
-    client = _FakeClient(["神秘的なイントロ文です。"])
-    manager = TwoStageSessionManager(client=client)
-    manager._generate_tts = lambda text: _noop_tts(text)
-
-    events = []
-    async for event in manager.intro():
-        events.append(event)
-
-    types = [e["type"] for e in events]
-    assert types == ["intro", "turn_end"]
-    assert "神秘的なイントロ文です。" in events[0]["text"]
-
-
-@pytest.mark.asyncio
-async def test_intro_uses_fallback_text_on_empty_response():
-    client = _FakeClient([""])
-    manager = TwoStageSessionManager(client=client)
-    manager._generate_tts = lambda text: _noop_tts(text)
-
-    events = []
-    async for event in manager.intro():
-        events.append(event)
-
-    assert events[0]["type"] == "intro"
-    assert len(events[0]["text"]) > 0
 
 
 # --- receive_audio() tests ---

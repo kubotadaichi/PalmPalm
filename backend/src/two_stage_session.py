@@ -53,31 +53,6 @@ class TwoStageSessionManager:
         self._history: list[dict] = []
         self._lock = asyncio.Lock()
 
-    async def intro(self) -> AsyncGenerator[dict, None]:
-        """イントロを生成して SSE イベントを yield する。"""
-        prompt = "手相占いを始めます。相手の手を見て、神秘的なイントロを2文で述べてください。"
-        contents = [{"role": "user", "parts": [{"text": prompt}]}]
-        try:
-            text = await self._generate_text(contents, STAGE1_SYSTEM)
-        except Exception as e:
-            print(f"[TwoStage] intro text error: {e}")
-            text = ""
-        if not text:
-            text = "あなたの手のひらには、深い運命の線が刻まれています。今日は特別なものが見えます。"
-
-        try:
-            audio_url, _ = await self._generate_tts(text)
-        except Exception as e:
-            print(f"[TwoStage] intro TTS error: {e}")
-            audio_url = None
-
-        self._history.extend([
-            {"role": "user", "parts": [{"text": prompt}]},
-            {"role": "model", "parts": [{"text": text}]},
-        ])
-        yield {"type": "intro", "text": text, "audio_url": audio_url}
-        yield {"type": "turn_end"}
-
     async def receive_audio(
         self, audio_bytes: bytes, mime_type: str = "audio/webm"
     ) -> AsyncGenerator[dict, None]:
@@ -204,7 +179,10 @@ class TwoStageSessionManager:
                 ),
             ),
         )
-        pcm = _b64.b64decode(response.candidates[0].content.parts[0].inline_data.data)
+        parts = response.candidates[0].content.parts
+        pcm = b"".join(
+            p.inline_data.data for p in parts if getattr(p, "inline_data", None)
+        )
         return _save_tts_wav(pcm)
 
 

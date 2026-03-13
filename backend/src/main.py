@@ -12,9 +12,8 @@ _socket.getaddrinfo = _ipv4_only
 PalmPalm バックエンド（FastAPI）
 
 エンドポイント:
-  GET  /health              - ヘルスチェック
-  GET  /api/session/start   - SSE: intro.wav を即返却（intro → turn_end）
-  POST /api/audio           - SSE: ユーザー音声 → stage1 → stage2 → turn_end
+  GET  /health    - ヘルスチェック
+  POST /api/audio - ユーザー音声 → stage1 → stage2 → turn_end
 
 環境変数:
   GEMINI_API_KEY      - Gemini API キー
@@ -33,8 +32,6 @@ from dotenv import load_dotenv
 from .two_stage_session import TwoStageSessionManager
 
 load_dotenv()
-
-INTRO_AUDIO_URL = "/audio/tts/intro.wav"
 
 gemini = TwoStageSessionManager()
 
@@ -55,20 +52,6 @@ def _sse(event: dict) -> str:
 @app.get("/health")
 async def health():
     return {"status": "ok"}
-
-
-@app.get("/api/session/start")
-async def session_start():
-    """静的 intro.wav を SSE で即返す（Gemini 呼び出しなし）。"""
-    async def generate():
-        yield _sse({"type": "intro", "text": "", "audio_url": INTRO_AUDIO_URL})
-        yield _sse({"type": "turn_end"})
-
-    return StreamingResponse(
-        generate(),
-        media_type="text/event-stream",
-        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
-    )
 
 
 @app.post("/api/audio")
