@@ -69,6 +69,8 @@ PHASE_CONFIG = {
     },
 }
 
+_PHASE_ORDER = [PhaseEnum.INTRO, PhaseEnum.CORE, PhaseEnum.HYPE, PhaseEnum.CLIMAX]
+
 MODEL = os.getenv("GEMINI_MODEL", "gemini-2.5-flash")
 TTS_MODEL = "gemini-2.5-flash-preview-tts"
 TTS_VOICE = "Kore"
@@ -102,6 +104,22 @@ class TwoStageSessionManager:
         self._phase: PhaseEnum = PhaseEnum.INTRO
         self._phase_turns: int = 0
         self._lock = asyncio.Lock()
+
+    def _advance_phase_if_needed(self, agitation_level: int) -> None:
+        if self._phase == PhaseEnum.CLIMAX:
+            return
+        cfg = PHASE_CONFIG[self._phase]
+        min_turns = cfg.get("min_turns", 0)
+        max_turns = cfg.get("max_turns", float("inf"))
+        threshold = cfg.get("agitation_threshold", 100)
+        should_advance = (
+            self._phase_turns >= max_turns
+            or (self._phase_turns >= min_turns and agitation_level >= threshold)
+        )
+        if should_advance:
+            idx = _PHASE_ORDER.index(self._phase)
+            self._phase = _PHASE_ORDER[idx + 1]
+            self._phase_turns = 0
 
     async def receive_audio(
         self, audio_bytes: bytes, mime_type: str = "audio/webm"

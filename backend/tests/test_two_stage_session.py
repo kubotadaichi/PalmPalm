@@ -115,6 +115,39 @@ def test_initial_phase_is_intro():
     assert manager._phase_turns == 0
 
 
+def test_advance_phase_on_agitation_threshold():
+    manager = TwoStageSessionManager(client=_FakeClient([]))
+    manager._phase = PhaseEnum.INTRO
+    manager._phase_turns = 1  # min_turns=1 を満たす
+    manager._advance_phase_if_needed(agitation_level=35)  # threshold=30 超
+    assert manager._phase == PhaseEnum.CORE
+    assert manager._phase_turns == 0
+
+
+def test_advance_phase_on_max_turns():
+    manager = TwoStageSessionManager(client=_FakeClient([]))
+    manager._phase = PhaseEnum.INTRO
+    manager._phase_turns = 3  # max_turns=3 に達した
+    manager._advance_phase_if_needed(agitation_level=0)  # threshold未満でも進む
+    assert manager._phase == PhaseEnum.CORE
+
+
+def test_no_advance_when_min_turns_not_met():
+    manager = TwoStageSessionManager(client=_FakeClient([]))
+    manager._phase = PhaseEnum.INTRO
+    manager._phase_turns = 0  # min_turns=1 未満
+    manager._advance_phase_if_needed(agitation_level=100)
+    assert manager._phase == PhaseEnum.INTRO
+
+
+def test_climax_does_not_advance():
+    manager = TwoStageSessionManager(client=_FakeClient([]))
+    manager._phase = PhaseEnum.CLIMAX
+    manager._phase_turns = 99
+    manager._advance_phase_if_needed(agitation_level=100)
+    assert manager._phase == PhaseEnum.CLIMAX
+
+
 # --- helpers ---
 
 async def _noop_tts(text: str):
