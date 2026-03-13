@@ -12,6 +12,7 @@ import base64 as _b64
 import enum
 import io
 import os
+import re
 import uuid
 import wave
 from pathlib import Path
@@ -105,6 +106,21 @@ class TwoStageSessionManager:
         self._phase_turns: int = 0
         self._lock = asyncio.Lock()
 
+    def _build_stage1_system(self) -> str:
+        base = PHASE_CONFIG[self._phase]["system"]
+        recent = self._history[-4:]
+        if not recent:
+            return base
+        history_lines = "\n".join(
+            f"- ターン{i+1}: (あなた) {h['model']} / (相手) {h['user']}"
+            for i, h in enumerate(recent)
+        )
+        return (
+            f"{base}\n\n"
+            f"これまでの会話:\n{history_lines}\n"
+            "前の発言と矛盾せず、会話の流れを自然に続けること。"
+        )
+
     def _advance_phase_if_needed(self, agitation_level: int) -> None:
         if self._phase == PhaseEnum.CLIMAX:
             return
@@ -135,17 +151,19 @@ class TwoStageSessionManager:
 
             # Stage 1
             stage1_prompt = (
-                "占いの続きを一言ください。"
-                "まだ相手を煽りすぎず、神秘的なトーンを維持してください。"
+                "以下の2つを必ず出力してください:\n"
+                "<user_said>相手が言ったことを1文で要約</user_said>\n"
+                "<response>占い師としての応答を2文</response>"
             )
-            contents1 = self._history + [
+            contents1 = [
                 {"role": "user", "parts": [audio_part, {"text": stage1_prompt}]}
             ]
             try:
-                stage1_text = await self._generate_text(contents1, STAGE1_SYSTEM)
+                stage1_raw = await self._generate_text(contents1, self._build_stage1_system())
             except Exception as e:
                 print(f"[TwoStage] stage1 text error: {e}")
-                stage1_text = ""
+                stage1_raw = ""
+            user_summary, stage1_text = _parse_stage1(stage1_raw)
             if not stage1_text:
                 stage1_text = "手のひらに、まだ語られていない流れが見えます。"
 
@@ -252,6 +270,19 @@ class TwoStageSessionManager:
             p.inline_data.data for p in parts if getattr(p, "inline_data", None)
         )
         return _save_tts_wav(pcm)
+
+
+def _parse_stage1(raw: str) -> tuple[str, str]:
+    """<user_said>...</user_said> と <response>...</response> を抽出。"""
+    user_said = ""
+    response = raw
+    m_user = re.search(r"<user_said>(.*?)</user_said>", raw, re.DOTALL)
+    m_resp = re.search(r"<response>(.*?)</response>", raw, re.DOTALL)
+    if m_user:
+        user_said = m_user.group(1).strip()
+    if m_resp:
+        response = m_resp.group(1).strip()
+    return user_said, response
 
 
 def _chunks(text: str, size: int) -> list[str]:

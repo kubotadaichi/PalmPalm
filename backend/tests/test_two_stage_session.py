@@ -148,6 +148,37 @@ def test_climax_does_not_advance():
     assert manager._phase == PhaseEnum.CLIMAX
 
 
+def test_build_stage1_system_returns_phase_prompt():
+    manager = TwoStageSessionManager(client=_FakeClient([]))
+    manager._phase = PhaseEnum.INTRO
+    system = manager._build_stage1_system()
+    assert "ぱむぱむ" in system
+    assert "前置き" in system  # INTROプロンプトの一部
+
+
+def test_build_stage1_system_injects_history():
+    manager = TwoStageSessionManager(client=_FakeClient([]))
+    manager._history = [{"user": "占いについて", "model": "手相が見えます"}]
+    system = manager._build_stage1_system()
+    assert "占いについて" in system
+
+
+def test_parse_stage1_extracts_tags():
+    from src.two_stage_session import _parse_stage1
+    raw = "<user_said>恋愛について聞いた</user_said><response>手相に流れが見える</response>"
+    user, response = _parse_stage1(raw)
+    assert user == "恋愛について聞いた"
+    assert response == "手相に流れが見える"
+
+
+def test_parse_stage1_fallback_when_no_tags():
+    from src.two_stage_session import _parse_stage1
+    raw = "タグなしのテキスト"
+    user, response = _parse_stage1(raw)
+    assert user == ""
+    assert response == "タグなしのテキスト"
+
+
 # --- helpers ---
 
 async def _noop_tts(text: str):
