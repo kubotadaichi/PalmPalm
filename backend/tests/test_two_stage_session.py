@@ -1,9 +1,13 @@
+import base64
+import io
+import wave
 from types import SimpleNamespace
+from unittest.mock import MagicMock, patch
 
 import pytest
 
 from src.agitation_engine import AgitationEngine
-from src.two_stage_session import TwoStageSessionManager
+from src.two_stage_session import TwoStageSessionManager, _pcm_to_wav_bytes, _save_tts_wav, _wav_duration
 
 
 class _FakeModels:
@@ -132,3 +136,31 @@ async def test_start_session_sends_intro_and_ai_turn_end():
     assert any(m["type"] == "ai_turn_end" for m in received), "ai_turn_end が届いていない"
     types = [m["type"] for m in received]
     assert types[-1] == "ai_turn_end", "ai_turn_end が最後でない"
+
+
+def test_pcm_to_wav_bytes_creates_valid_wav():
+    pcm = bytes(24000 * 2)  # 1秒分のサイレント PCM
+    wav_bytes = _pcm_to_wav_bytes(pcm, sample_rate=24000)
+    with wave.open(io.BytesIO(wav_bytes)) as wf:
+        assert wf.getnchannels() == 1
+        assert wf.getsampwidth() == 2
+        assert wf.getframerate() == 24000
+
+
+def test_wav_duration():
+    pcm = bytes(24000 * 2)  # 1秒
+    assert abs(_wav_duration(_pcm_to_wav_bytes(pcm)) - 1.0) < 0.01
+
+
+def test_save_tts_wav_returns_url_and_duration(tmp_path):
+    with patch("src.two_stage_session.TTS_DIR", tmp_path):
+        url, duration = _save_tts_wav(bytes(24000 * 2))
+    assert url.startswith("/audio/tts/") and url.endswith(".wav")
+    assert abs(duration - 1.0) < 0.01
+
+
+def test_save_tts_wav_cleanup_old_files(tmp_path):
+    with patch("src.two_stage_session.TTS_DIR", tmp_path):
+        for _ in range(21):
+            _save_tts_wav(bytes(24000 * 2))
+        assert len(list(tmp_path.glob("*.wav"))) <= 20

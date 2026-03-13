@@ -8,7 +8,11 @@ from __future__ import annotations
 
 import asyncio
 import base64
+import io
 import os
+import uuid
+import wave
+from pathlib import Path
 
 from google import genai
 from google.genai import types
@@ -172,3 +176,34 @@ class TwoStageSessionManager:
 
 def _chunks(text: str, size: int) -> list[str]:
     return [text[i : i + size] for i in range(0, len(text), size)]
+
+
+TTS_DIR = Path("assets/audio/tts")
+TTS_SAMPLE_RATE = 24000
+
+
+def _pcm_to_wav_bytes(pcm: bytes, sample_rate: int = TTS_SAMPLE_RATE) -> bytes:
+    buf = io.BytesIO()
+    with wave.open(buf, "wb") as wf:
+        wf.setnchannels(1)
+        wf.setsampwidth(2)
+        wf.setframerate(sample_rate)
+        wf.writeframes(pcm)
+    return buf.getvalue()
+
+
+def _wav_duration(wav_bytes: bytes) -> float:
+    with wave.open(io.BytesIO(wav_bytes)) as wf:
+        return wf.getnframes() / wf.getframerate()
+
+
+def _save_tts_wav(pcm: bytes, sample_rate: int = TTS_SAMPLE_RATE) -> tuple[str, float]:
+    """PCM を WAV として保存し (url_path, duration_sec) を返す。古いファイルは20件超で削除。"""
+    TTS_DIR.mkdir(parents=True, exist_ok=True)
+    files = sorted(TTS_DIR.glob("*.wav"), key=lambda p: p.stat().st_mtime)
+    while len(files) >= 20:
+        files.pop(0).unlink(missing_ok=True)
+    filename = f"tts_{uuid.uuid4().hex}.wav"
+    wav_bytes = _pcm_to_wav_bytes(pcm, sample_rate)
+    (TTS_DIR / filename).write_bytes(wav_bytes)
+    return f"/audio/tts/{filename}", _wav_duration(wav_bytes)
