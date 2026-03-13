@@ -98,7 +98,9 @@ class TwoStageSessionManager:
                 httpx_async_client=httpx.AsyncClient(http2=False, timeout=30),
             ),
         )
-        self._history: list[dict] = []
+        self._history: list[dict] = []  # {"user": str, "model": str} text-only
+        self._phase: PhaseEnum = PhaseEnum.INTRO
+        self._phase_turns: int = 0
         self._lock = asyncio.Lock()
 
     async def receive_audio(

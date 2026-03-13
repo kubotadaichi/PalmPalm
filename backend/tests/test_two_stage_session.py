@@ -109,6 +109,12 @@ def test_save_tts_wav_cleanup_old_files(tmp_path):
         assert len(list(tmp_path.glob("*.wav"))) <= 20
 
 
+def test_initial_phase_is_intro():
+    manager = TwoStageSessionManager(client=_FakeClient([]))
+    assert manager._phase == PhaseEnum.INTRO
+    assert manager._phase_turns == 0
+
+
 # --- helpers ---
 
 async def _noop_tts(text: str):
