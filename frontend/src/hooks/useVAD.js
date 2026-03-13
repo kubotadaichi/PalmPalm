@@ -3,13 +3,11 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 const DEFAULT_MAX_SECONDS = 10
 
 /**
- * マイク音声を最大N秒録音してバックエンドへPOSTするフック
- * @param {string} httpBase - バックエンドのHTTPベースURL (例: "http://localhost:8000")
+ * マイク音声を最大N秒録音して onAudioReady(blob, mimeType) を呼ぶフック
  */
-export function useVAD({ httpBase, maxSeconds = DEFAULT_MAX_SECONDS, turn, onRecordingComplete }) {
+export function useVAD({ maxSeconds = DEFAULT_MAX_SECONDS, turn, onAudioReady }) {
   const [isSpeaking, setIsSpeaking] = useState(false)
   const [vadError, setVadError] = useState(null)
-  const [isSending, setIsSending] = useState(false)
   const [timeLeft, setTimeLeft] = useState(maxSeconds)
   const [isSupported] = useState(
     typeof navigator !== 'undefined' &&
@@ -33,26 +31,6 @@ export function useVAD({ httpBase, maxSeconds = DEFAULT_MAX_SECONDS, turn, onRec
       countdownIntervalRef.current = null
     }
   }, [])
-
-  const sendRecordedAudio = useCallback(
-    async (blob) => {
-      if (!blob || blob.size === 0) return
-
-      setIsSending(true)
-      try {
-        await fetch(`${httpBase}/api/audio`, {
-          method: 'POST',
-          headers: { 'Content-Type': blob.type || 'application/octet-stream' },
-          body: blob,
-        })
-      } catch {
-        setVadError('音声送信に失敗しました')
-      } finally {
-        setIsSending(false)
-      }
-    },
-    [httpBase],
-  )
 
   const ensureStream = useCallback(async () => {
     if (streamRef.current) return streamRef.current
@@ -96,14 +74,12 @@ export function useVAD({ httpBase, maxSeconds = DEFAULT_MAX_SECONDS, turn, onRec
         clearTimers()
         setIsSpeaking(false)
         setTimeLeft(maxSeconds)
-
         const blob = new Blob(chunksRef.current, {
           type: recorder.mimeType || 'audio/webm',
         })
         chunksRef.current = []
         if (blob.size > 0) {
-          await sendRecordedAudio(blob)
-          onRecordingComplete?.()
+          onAudioReady?.(blob, recorder.mimeType || 'audio/webm')
         }
       }
 
@@ -122,7 +98,7 @@ export function useVAD({ httpBase, maxSeconds = DEFAULT_MAX_SECONDS, turn, onRec
     } catch (error) {
       setVadError(error?.message ?? 'マイク初期化に失敗しました')
     }
-  }, [clearTimers, ensureStream, isSpeaking, isSupported, maxSeconds, sendRecordedAudio])
+  }, [clearTimers, ensureStream, isSpeaking, isSupported, maxSeconds, onAudioReady])
 
   // turn が 'user' になったら自動録音開始
   useEffect(() => {
@@ -148,13 +124,5 @@ export function useVAD({ httpBase, maxSeconds = DEFAULT_MAX_SECONDS, turn, onRec
     }
   }, [clearTimers])
 
-  return {
-    isSpeaking,
-    vadError,
-    isSending,
-    timeLeft,
-    isSupported,
-    startRecording,
-    stopRecording,
-  }
+  return { isSpeaking, vadError, timeLeft, isSupported, startRecording, stopRecording }
 }
