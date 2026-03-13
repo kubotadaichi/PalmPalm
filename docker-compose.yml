@@ -9,8 +9,9 @@ services:
       - ./backend/src:/app/src
       - ./backend/assets:/app/assets
     environment:
-      - MOCK_MODE=true
+      - MOCK_MODE=false
       - GEMINI_API_KEY=${GEMINI_API_KEY:-dummy}
+      - AGITATION_API_URL=http://raspberrypi.local:8001
     extra_hosts:
       - "host.docker.internal:host-gateway"
 
@@ -27,7 +28,7 @@ services:
       - ./frontend/vite.config.js:/app/vite.config.js
       # node_modules はコンテナ内のものを使う（ホストにマウントしない）
     environment:
-      - VITE_BACKEND_WS_URL=ws://localhost:8000/ws/frontend
+      - VITE_BACKEND_URL=http://localhost:8000
     extra_hosts:
       - "host.docker.internal:host-gateway"
     depends_on:
