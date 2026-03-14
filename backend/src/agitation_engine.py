@@ -55,3 +55,9 @@ class AgitationEngine:
         result = {"level": current, "trend": self.trend}
         self._previous_level = float(current)
         return result
+
+    def snapshot_window(self, from_ts: float, to_ts: float) -> dict:
+        """指定期間内のパルスから level/peak/trend を算出。_previous_level は更新しない。"""
+        pulses_in_window = [t for t in self._pulses if from_ts <= t <= to_ts]
+        level = min(100, int(len(pulses_in_window) / self.max_pulses * 100))
+        return {"level": level, "peak": level, "trend": self._calc_trend(level)}
