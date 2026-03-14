@@ -14,10 +14,13 @@ def health():
 
 @app.get("/agitation")
 def get_agitation():
-    return engine.snapshot()
+    snap = engine.snapshot()
+    print(f"[Agitation] snapshot → level={snap['level']}%, trend={snap['trend']}", flush=True)
+    return snap
 
 
 @app.post("/pulse")
 def post_pulse():
     engine.record_pulse()
+    print(f"[Agitation] pulse received → level={engine.level}%", flush=True)
     return {"ok": True}

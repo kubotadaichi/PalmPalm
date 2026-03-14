@@ -200,13 +200,16 @@ class TwoStageSessionManager:
     async def _fetch_agitation(self) -> dict:
         """ラズパイの agitation API を叩く。未設定時はダミーを返す。"""
         if not self.agitation_api_url:
+            print("[TwoStage] AGITATION_API_URL unset → level=0, trend=stable", flush=True)
             return {"level": 0, "trend": "stable"}
         try:
             async with httpx.AsyncClient(timeout=3.0) as client:
                 resp = await client.get(f"{self.agitation_api_url}/agitation")
-                return resp.json()
+                snap = resp.json()
+                print(f"[TwoStage] agitation → level={snap['level']}%, trend={snap['trend']}", flush=True)
+                return snap
         except Exception as e:
-            print(f"[TwoStage] agitation fetch error: {e}")
+            print(f"[TwoStage] agitation fetch error: {e}", flush=True)
             return {"level": 0, "trend": "stable"}
 
     async def _generate_text(self, contents: list, system_instruction: str) -> str:
