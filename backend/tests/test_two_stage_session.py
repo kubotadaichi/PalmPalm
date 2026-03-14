@@ -11,23 +11,6 @@ from src.two_stage_session import (
     _save_tts_wav,
     _wav_duration,
 )
-from src.two_stage_session import PhaseEnum, PHASE_CONFIG
-
-
-def test_phase_enum_has_four_phases():
-    assert set(PhaseEnum) == {PhaseEnum.INTRO, PhaseEnum.CORE, PhaseEnum.HYPE, PhaseEnum.CLIMAX}
-
-
-def test_phase_config_has_all_phases():
-    for phase in PhaseEnum:
-        cfg = PHASE_CONFIG[phase]
-        assert "system" in cfg
-        if phase == PhaseEnum.CLIMAX:
-            assert set(cfg.keys()) == {"system"}
-        else:
-            assert "min_turns" in cfg
-            assert "max_turns" in cfg
-            assert "agitation_threshold" in cfg
 
 
 class _FakeModels:
@@ -109,59 +92,6 @@ def test_save_tts_wav_cleanup_old_files(tmp_path):
         assert len(list(tmp_path.glob("*.wav"))) <= 20
 
 
-def test_initial_phase_is_intro():
-    manager = TwoStageSessionManager(client=_FakeClient([]))
-    assert manager._phase == PhaseEnum.INTRO
-    assert manager._phase_turns == 0
-
-
-def test_advance_phase_on_agitation_threshold():
-    manager = TwoStageSessionManager(client=_FakeClient([]))
-    manager._phase = PhaseEnum.INTRO
-    manager._phase_turns = 1  # min_turns=1 を満たす
-    manager._advance_phase_if_needed(agitation_level=35)  # threshold=30 超
-    assert manager._phase == PhaseEnum.CORE
-    assert manager._phase_turns == 0
-
-
-def test_advance_phase_on_max_turns():
-    manager = TwoStageSessionManager(client=_FakeClient([]))
-    manager._phase = PhaseEnum.INTRO
-    manager._phase_turns = 3  # max_turns=3 に達した
-    manager._advance_phase_if_needed(agitation_level=0)  # threshold未満でも進む
-    assert manager._phase == PhaseEnum.CORE
-
-
-def test_no_advance_when_min_turns_not_met():
-    manager = TwoStageSessionManager(client=_FakeClient([]))
-    manager._phase = PhaseEnum.INTRO
-    manager._phase_turns = 0  # min_turns=1 未満
-    manager._advance_phase_if_needed(agitation_level=100)
-    assert manager._phase == PhaseEnum.INTRO
-
-
-def test_climax_does_not_advance():
-    manager = TwoStageSessionManager(client=_FakeClient([]))
-    manager._phase = PhaseEnum.CLIMAX
-    manager._phase_turns = 99
-    manager._advance_phase_if_needed(agitation_level=100)
-    assert manager._phase == PhaseEnum.CLIMAX
-
-
-def test_build_stage1_system_returns_phase_prompt():
-    manager = TwoStageSessionManager(client=_FakeClient([]))
-    manager._phase = PhaseEnum.INTRO
-    system = manager._build_stage1_system()
-    assert "ぱむぱむ" in system
-    assert "前置き" in system  # INTROプロンプトの一部
-
-
-def test_build_stage1_system_injects_history():
-    manager = TwoStageSessionManager(client=_FakeClient([]))
-    manager._history = [{"user": "占いについて", "model": "手相が見えます"}]
-    system = manager._build_stage1_system()
-    assert "占いについて" in system
-
 
 def test_parse_stage1_extracts_tags():
     from src.two_stage_session import _parse_stage1
@@ -177,6 +107,80 @@ def test_parse_stage1_fallback_when_no_tags():
     user, response = _parse_stage1(raw)
     assert user == ""
     assert response == "タグなしのテキスト"
+
+
+# --- Stage1 system prompt tests ---
+
+def test_build_stage1_system_contains_cold_reading_instructions():
+    manager = TwoStageSessionManager(client=_FakeClient([]))
+    system = manager._build_stage1_system()
+    assert "ぱむぱむ" in system
+    assert "感情線" in system
+
+
+def test_build_stage1_system_injects_history():
+    manager = TwoStageSessionManager(client=_FakeClient([]))
+    manager._history = [
+        {"role": "user", "parts": [{"text": "恋愛について聞きたい"}]},
+        {"role": "model", "parts": [{"text": "感情線に流れが見えます"}]},
+    ]
+    system = manager._build_stage1_system()
+    assert "恋愛について聞きたい" in system
+    assert "感情線に流れが見えます" in system
+
+
+def test_build_stage1_system_no_phase_mentions():
+    manager = TwoStageSessionManager(client=_FakeClient([]))
+    system = manager._build_stage1_system()
+    for word in ["INTRO", "CORE", "HYPE", "CLIMAX", "フェーズ"]:
+        assert word not in system
+
+
+# --- Stage2 prompt tests ---
+
+def test_build_stage2_prompt_low_agitation():
+    manager = TwoStageSessionManager(client=_FakeClient([]))
+    prompt = manager._build_stage2_prompt(level=20, trend="stable", stage1_text="何かが見えます")
+    assert "level" in prompt or "20" in prompt
+
+
+def test_build_stage2_prompt_high_rising_agitation():
+    manager = TwoStageSessionManager(client=_FakeClient([]))
+    prompt = manager._build_stage2_prompt(level=75, trend="rising", stage1_text="あなたは孤独です")
+    assert "75" in prompt or "rising" in prompt
+
+
+def test_build_stage2_prompt_max_agitation():
+    manager = TwoStageSessionManager(client=_FakeClient([]))
+    prompt = manager._build_stage2_prompt(level=85, trend="rising", stage1_text="隠せません")
+    assert "85" in prompt or "rising" in prompt
+
+
+def test_build_stage2_prompt_falling_agitation():
+    manager = TwoStageSessionManager(client=_FakeClient([]))
+    prompt = manager._build_stage2_prompt(level=65, trend="falling", stage1_text="体が覚えています")
+    assert "falling" in prompt or "65" in prompt
+
+
+def test_build_stage2_prompt_ends_with_question_rule():
+    manager = TwoStageSessionManager(client=_FakeClient([]))
+    prompt = manager._build_stage2_prompt(level=50, trend="rising", stage1_text="何か感じます")
+    assert "問いかけ" in prompt or "？" in prompt
+
+
+def test_build_stage2_prompt_contains_stage1_text():
+    manager = TwoStageSessionManager(client=_FakeClient([]))
+    stage1 = "あなたの感情線には秘密が刻まれています"
+    prompt = manager._build_stage2_prompt(level=40, trend="rising", stage1_text=stage1)
+    assert stage1 in prompt
+
+
+# --- Integration: no phase attributes ---
+
+def test_manager_has_no_phase_attributes():
+    manager = TwoStageSessionManager(client=_FakeClient([]))
+    assert not hasattr(manager, "_phase")
+    assert not hasattr(manager, "_phase_turns")
 
 
 # --- helpers ---
