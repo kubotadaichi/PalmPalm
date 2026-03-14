@@ -2,7 +2,7 @@ from fastapi import FastAPI
 
 from .agitation_engine import AgitationEngine
 
-engine = AgitationEngine(window_seconds=10, max_pulses=5)
+engine = AgitationEngine(window_seconds=10, max_pulses=10)
 
 app = FastAPI()
 

@@ -13,7 +13,7 @@ from agitation_engine import AgitationEngine
 app = FastAPI()
 app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"])
 
-engine = AgitationEngine(window_seconds=10, max_pulses=5)
+engine = AgitationEngine(window_seconds=10, max_pulses=10)
 
 
 @app.post("/pulse")
