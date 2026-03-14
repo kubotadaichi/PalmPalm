@@ -9,7 +9,6 @@ from __future__ import annotations
 
 import asyncio
 import base64 as _b64
-import enum
 import io
 import os
 import re
@@ -23,70 +22,59 @@ from google import genai
 from google.genai import types
 from google.genai.types import HttpOptions
 
-class PhaseEnum(enum.Enum):
-    INTRO = "intro"
-    CORE = "core"
-    HYPE = "hype"
-    CLIMAX = "climax"
-
-PHASE_CONFIG = {
-    PhaseEnum.INTRO: {
-        "system": (
-            "あなたはAI手相占い師「ぱむぱむ」です。"
-            "初めて手を見る緊張感と神秘的な雰囲気を出しながら、"
-            "手相から何かが見えてきた…という前置きを2文で語ってください。"
-        ),
-        "min_turns": 1,
-        "max_turns": 3,
-        "agitation_threshold": 30,
-    },
-    PhaseEnum.CORE: {
-        "system": (
-            "あなたはAI手相占い師「ぱむぱむ」です。"
-            "運命線・感情線から、この人の性格・過去・隠された本音を"
-            "低くゆっくりと確信を持って2文で読み解いてください。"
-        ),
-        "min_turns": 2,
-        "max_turns": 4,
-        "agitation_threshold": 50,
-    },
-    PhaseEnum.HYPE: {
-        "system": (
-            "あなたはAI手相占い師「ぱむぱむ」です。"
-            "占いが当たっていると確信してきた。"
-            "相手の反応を指摘しながら、テンションを上げて1〜2文で煽ってください。"
-        ),
-        "min_turns": 1,
-        "max_turns": 3,
-        "agitation_threshold": 70,
-    },
-    PhaseEnum.CLIMAX: {
-        "system": (
-            "あなたはAI手相占い師「ぱむぱむ」です。"
-            "すべてが繋がった。感情的に畳み掛けて、"
-            "この占いが完全に正しいと断言する1〜2文を叫ぶように語ってください。"
-        ),
-    },
-}
-
-_PHASE_ORDER = [PhaseEnum.INTRO, PhaseEnum.CORE, PhaseEnum.HYPE, PhaseEnum.CLIMAX]
-
 MODEL = os.getenv("GEMINI_MODEL", "gemini-2.5-flash")
 TTS_MODEL = "gemini-2.5-flash-preview-tts"
 TTS_VOICE = "Kore"
 STAGE2_LEAD_SECONDS = float(os.getenv("STAGE2_LEAD_SECONDS", "3"))
 AGITATION_API_URL = os.getenv("AGITATION_API_URL", "")  # 例: http://raspberrypi.local:8001
 
-STAGE1_SYSTEM = (
-    "あなたはAI手相占い師「ぱむぱむ」です。"
-    "まずは会話の流れに沿って、低いトーンで神秘的に2文程度で語ってください。"
-)
+STAGE1_SYSTEM_BASE = """\
+あなたはAI手相占い師「ぱむぱむ」です。
 
-STAGE2_SYSTEM = (
-    "あなたはAI手相占い師「ぱむぱむ」です。"
-    "動揺データ(level, trend)を踏まえ、占いが当たっている証拠として"
-    "テンションを少し上げて1〜2文で追い込みコメントを返してください。"
-)
+【手相読みの姿勢】
+手の感情線・運命線・頭脳線・生命線を具体的に言及しながら語ること。
+最初は広い仮説を投げること（例:「あなたは人前では強く見せているが、内側では違う面がある」）。
+会話が進むにつれてユーザーの感情を絞り込む。
+
+【会話の方針】
+- ユーザーが言ったことの「裏にある感情」を推測して名指しする
+- 断言は避け、「〜ではないですか」「〜が見えます」という形で仮説として語る
+- 前のターンの発言と矛盾しないこと
+- 神秘的かつ低いトーンで、2文以内で語る
+
+【出力形式（厳守）】
+<user_said>相手の発言を1文で要約</user_said>
+<response>占い師の応答（2文以内）</response>
+"""
+
+STAGE2_SYSTEM_TEMPLATE = """\
+あなたはAI手相占い師「ぱむぱむ」です。
+手に触れるセンサーが今 level={level}%, trend={trend} を示しています。
+これは意識的な反応ではなく、無意識の身体が正直に答えているものです。
+
+直前の発言: 「{stage1_text}」
+
+以下の強度で応じてください:
+
+■ level 0〜30（反応薄）
+  「何かが微かに動いています」程度の暗示にとどめる。断言しない。
+
+■ level 30〜60, trend=rising（反応あり・上昇中）
+  「体が反応しました」として、直前の仮説を確信に変える。
+
+■ level 60〜80, trend=rising（強い反応・上昇中）
+  感情を名指しで断言する。「それは○○への恐れです」のように言い切る。
+
+■ level 60〜80, trend=falling（強い反応・落ち着きかけ）
+  「今落ち着こうとしていますね——でも体は覚えています」と逃げを指摘する。
+
+■ level 80以上（最大反応）
+  「隠せていません」として完全断言・畳み掛ける。
+
+【必須ルール】
+- 必ず問いかけの文章（？で終わる）で締めること
+- 1〜2文で完結させること
+"""
 
 
 class TwoStageSessionManager:
@@ -101,47 +89,37 @@ class TwoStageSessionManager:
             ),
         )
         self._history: list[dict] = []  # Gemini API format: {"role": ..., "parts": [{"text": ...}]}
-        self._phase: PhaseEnum = PhaseEnum.INTRO
-        self._phase_turns: int = 0
         self._lock = asyncio.Lock()
 
     def _build_stage1_system(self) -> str:
-        base = PHASE_CONFIG[self._phase]["system"]
-        # _history は [user, model, user, model, ...] の交互構造
+        if not self._history:
+            return STAGE1_SYSTEM_BASE
         pairs = [
-            {"user": self._history[i]["parts"][0]["text"],
-             "model": self._history[i + 1]["parts"][0]["text"]}
+            {
+                "user": self._history[i]["parts"][0]["text"],
+                "model": self._history[i + 1]["parts"][0]["text"],
+            }
             for i in range(0, len(self._history) - 1, 2)
-            if self._history[i]["role"] == "user" and self._history[i + 1]["role"] == "model"
+            if self._history[i]["role"] == "user"
+            and self._history[i + 1]["role"] == "model"
         ]
-        recent = pairs[-4:]
-        if not recent:
-            return base
+        recent = pairs[-6:]
         history_lines = "\n".join(
-            f"- ターン{i+1}: (あなた) {h['model']} / (相手) {h['user']}"
+            f"- ターン{i+1}: (相手) {h['user']} / (あなた) {h['model']}"
             for i, h in enumerate(recent)
         )
         return (
-            f"{base}\n\n"
-            f"これまでの会話:\n{history_lines}\n"
-            "前の発言と矛盾せず、会話の流れを自然に続けること。"
+            f"{STAGE1_SYSTEM_BASE}\n"
+            f"【これまでの会話】\n{history_lines}\n"
+            "前の発言と矛盾しないこと。"
         )
 
-    def _advance_phase_if_needed(self, agitation_level: int) -> None:
-        if self._phase == PhaseEnum.CLIMAX:
-            return
-        cfg = PHASE_CONFIG[self._phase]
-        min_turns = cfg.get("min_turns", 0)
-        max_turns = cfg.get("max_turns", float("inf"))
-        threshold = cfg.get("agitation_threshold", 100)
-        should_advance = (
-            self._phase_turns >= max_turns
-            or (self._phase_turns >= min_turns and agitation_level >= threshold)
+    def _build_stage2_prompt(self, level: int, trend: str, stage1_text: str) -> str:
+        return STAGE2_SYSTEM_TEMPLATE.format(
+            level=level,
+            trend=trend,
+            stage1_text=stage1_text,
         )
-        if should_advance:
-            idx = _PHASE_ORDER.index(self._phase)
-            self._phase = _PHASE_ORDER[idx + 1]
-            self._phase_turns = 0
 
     async def receive_audio(
         self, audio_bytes: bytes, mime_type: str = "audio/webm"
@@ -188,16 +166,16 @@ class TwoStageSessionManager:
 
             # Stage 2（最新動揺度を取得）
             snapshot = await self._fetch_agitation()
-            stage2_prompt = (
-                f"動揺データ: level={snapshot['level']}, trend={snapshot['trend']}。"
-                f"直前の発言: {stage1_text} "
-                "この情報を踏まえ、当たっている実感を強める補足をしてください。"
+            stage2_system = self._build_stage2_prompt(
+                level=snapshot["level"],
+                trend=snapshot["trend"],
+                stage1_text=stage1_text,
             )
             contents2 = self._history + [
-                {"role": "user", "parts": [{"text": stage2_prompt}]}
+                {"role": "user", "parts": [{"text": "次の応答をしてください。"}]}
             ]
             try:
-                stage2_text = await self._generate_text(contents2, STAGE2_SYSTEM)
+                stage2_text = await self._generate_text(contents2, stage2_system)
             except Exception as e:
                 print(f"[TwoStage] stage2 text error: {e}")
                 stage2_text = ""
@@ -215,9 +193,6 @@ class TwoStageSessionManager:
                 {"role": "model", "parts": [{"text": f"{stage1_text} {stage2_text}"}]},
             ])
             self._history = self._history[-12:]
-
-            self._phase_turns += 1
-            self._advance_phase_if_needed(snapshot["level"])
 
             yield {"type": "stage2", "text": stage2_text, "audio_url": stage2_url}
             yield {"type": "turn_end"}
