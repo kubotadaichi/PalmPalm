@@ -29,7 +29,6 @@ class PhaseEnum(enum.Enum):
     HYPE = "hype"
     CLIMAX = "climax"
 
-# TODO(Task4): wire _phase into receive_audio via _build_stage1_system
 PHASE_CONFIG = {
     PhaseEnum.INTRO: {
         "system": (
@@ -101,15 +100,21 @@ class TwoStageSessionManager:
                 httpx_async_client=httpx.AsyncClient(http2=False, timeout=30),
             ),
         )
-        self._history: list[dict] = []  # Gemini API format: {"role": ..., "parts": [...]}
-        self._text_history: list[dict] = []  # {"user": str, "model": str} text-only
+        self._history: list[dict] = []  # Gemini API format: {"role": ..., "parts": [{"text": ...}]}
         self._phase: PhaseEnum = PhaseEnum.INTRO
         self._phase_turns: int = 0
         self._lock = asyncio.Lock()
 
     def _build_stage1_system(self) -> str:
         base = PHASE_CONFIG[self._phase]["system"]
-        recent = self._text_history[-4:]
+        # _history は [user, model, user, model, ...] の交互構造
+        pairs = [
+            {"user": self._history[i]["parts"][0]["text"],
+             "model": self._history[i + 1]["parts"][0]["text"]}
+            for i in range(0, len(self._history) - 1, 2)
+            if self._history[i]["role"] == "user" and self._history[i + 1]["role"] == "model"
+        ]
+        recent = pairs[-4:]
         if not recent:
             return base
         history_lines = "\n".join(
@@ -156,7 +161,7 @@ class TwoStageSessionManager:
                 "<user_said>相手が言ったことを1文で要約</user_said>\n"
                 "<response>占い師としての応答を2文</response>"
             )
-            contents1 = [
+            contents1 = self._history + [
                 {"role": "user", "parts": [audio_part, {"text": stage1_prompt}]}
             ]
             try:
@@ -206,12 +211,13 @@ class TwoStageSessionManager:
                 stage2_url = None
 
             self._history.extend([
-                {"role": "user", "parts": [audio_part]},
+                {"role": "user", "parts": [{"text": user_summary}]},
                 {"role": "model", "parts": [{"text": f"{stage1_text} {stage2_text}"}]},
             ])
             self._history = self._history[-12:]
-            self._text_history.append({"user": user_summary, "model": f"{stage1_text} {stage2_text}"})
-            self._text_history = self._text_history[-6:]
+
+            self._phase_turns += 1
+            self._advance_phase_if_needed(snapshot["level"])
 
             yield {"type": "stage2", "text": stage2_text, "audio_url": stage2_url}
             yield {"type": "turn_end"}
