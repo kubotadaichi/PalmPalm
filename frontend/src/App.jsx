@@ -7,7 +7,7 @@ import { EndPage } from './pages/EndPage'
 
 export default function App() {
   const [page, setPage] = useState('title')
-  const { turn, aiText, vadError, timeLeft } = useSession({
+  const { turn, vadError, timeLeft } = useSession({
     enabled: page === 'session',
   })
 
@@ -18,7 +18,6 @@ export default function App() {
       {page === 'session' && (
         <SessionPage
           turn={turn}
-          aiText={aiText}
           vadError={vadError}
           timeLeft={timeLeft}
           onEnd={() => setPage('end')}

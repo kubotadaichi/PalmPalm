@@ -3,7 +3,7 @@ import { KirbyMock } from '../components/KirbyMock'
 
 const SESSION_SECONDS = 120
 
-export function SessionPage({ turn, aiText, vadError, timeLeft, onEnd }) {
+export function SessionPage({ turn, vadError, timeLeft, onEnd }) {
   const [sessionTimeLeft, setSessionTimeLeft] = useState(SESSION_SECONDS)
 
   useEffect(() => {
@@ -30,10 +30,8 @@ export function SessionPage({ turn, aiText, vadError, timeLeft, onEnd }) {
           🎤 話してください... 残り {timeLeft}s
         </div>
       )}
-      <KirbyMock isTalking={turn === 'ai' && aiText.length > 0} />
-      <div className="mt-8 max-w-md text-center min-h-[4rem] px-4">
-        <p className="text-lg leading-relaxed">{aiText}</p>
-      </div>
+      <KirbyMock isTalking={turn === 'ai'} />
+      <div className="mt-8 max-w-md text-center min-h-[4rem] px-4" />
     </div>
   )
 }
