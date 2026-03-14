@@ -33,15 +33,17 @@ class AgitationEngine:
         self._cleanup()
         return min(100, int(len(self._pulses) / self.max_pulses * 100))
 
-    @property
-    def trend(self) -> str:
-        current = self.level
-        diff = current - self._previous_level
+    def _calc_trend(self, level: int) -> str:
+        diff = level - self._previous_level
         if diff > 10:
             return "rising"
         elif diff < -10:
             return "falling"
         return "stable"
+
+    @property
+    def trend(self) -> str:
+        return self._calc_trend(self.level)
 
     def is_spike(self) -> bool:
         """前回比+30以上で急上昇と判定"""

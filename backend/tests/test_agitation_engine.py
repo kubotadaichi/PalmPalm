@@ -96,3 +96,24 @@ def test_snapshot_updates_previous_level():
         engine.record_pulse()
     engine.snapshot()
     assert engine._previous_level == 50
+
+
+def test_calc_trend_rising():
+    """_calc_trend: diff > 10 で rising"""
+    engine = AgitationEngine(window_seconds=10, max_pulses=20)
+    engine._previous_level = 30
+    assert engine._calc_trend(50) == "rising"
+
+
+def test_calc_trend_falling():
+    """_calc_trend: diff < -10 で falling"""
+    engine = AgitationEngine(window_seconds=10, max_pulses=20)
+    engine._previous_level = 60
+    assert engine._calc_trend(40) == "falling"
+
+
+def test_calc_trend_stable():
+    """_calc_trend: diff が ±10 以内で stable"""
+    engine = AgitationEngine(window_seconds=10, max_pulses=20)
+    engine._previous_level = 50
+    assert engine._calc_trend(55) == "stable"
