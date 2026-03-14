@@ -1,40 +1,19 @@
-import { useState } from 'react'
-import { useBackendWS } from './hooks/useBackendWS'
-import { VibrationEffect } from './components/VibrationEffect'
-import { TitlePage } from './pages/TitlePage'
-import { RulesPage } from './pages/RulesPage'
-import { SessionPage } from './pages/SessionPage'
-import { EndPage } from './pages/EndPage'
+import { Routes, Route } from 'react-router-dom'
+import Home from './pages/Home'
+import Preparation from './pages/Preparation'
+import FortuneTelling from './pages/FortuneTelling'
+import Result from './pages/Result'
+import './App.css'
 
-export default function App() {
-  const [page, setPage] = useState('title')
-  const wsUrl = import.meta.env.VITE_BACKEND_WS_URL ?? 'ws://localhost:8000/ws/frontend'
-  const httpBase = wsUrl.replace(/^ws/, 'http').replace(/\/ws\/.*$/, '')
-  const { agitationLevel, aiText, aiAudioUrl, connected, turn, aiTurnEnded, setTurnToAi, startUserTurn } = useBackendWS()
-
+function App() {
   return (
-    <VibrationEffect agitationLevel={agitationLevel}>
-      {!connected && (
-        <div className="fixed top-2 left-2 text-xs text-yellow-400 z-50 bg-black/50 px-2 py-1 rounded">
-          ⚠ Backend未接続
-        </div>
-      )}
-      {page === 'title' && <TitlePage onStart={() => setPage('rules')} />}
-      {page === 'rules' && <RulesPage onReady={() => setPage('session')} />}
-      {page === 'session' && (
-        <SessionPage
-          agitationLevel={agitationLevel}
-          aiText={aiText}
-          aiAudioUrl={aiAudioUrl}
-          httpBase={httpBase}
-          turn={turn}
-          aiTurnEnded={aiTurnEnded}
-          startUserTurn={startUserTurn}
-          setTurnToAi={setTurnToAi}
-          onEnd={() => setPage('end')}
-        />
-      )}
-      {page === 'end' && <EndPage onBack={() => setPage('title')} />}
-    </VibrationEffect>
+    <Routes>
+      <Route path="/" element={<Home />} />
+      <Route path="/page2" element={<Preparation />} />
+      <Route path="/page3" element={<FortuneTelling />} />
+      <Route path="/page4" element={<Result />} />
+    </Routes>
   )
 }
+
+export default App
