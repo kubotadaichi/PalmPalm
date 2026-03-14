@@ -128,4 +128,19 @@ async def test_send_audio_calls_send_realtime_input(manager):
     manager._session = fake_session
     pcm = b"\x00" * 3200
     await manager.send_audio(pcm)
-    fake_session.send_realtime_input.assert_called_once()
+    first_args, first_kwargs = fake_session.send_realtime_input.await_args_list[0]
+    assert not first_args
+    assert first_kwargs["audio"].mime_type == "audio/pcm;rate=16000"
+
+
+@pytest.mark.asyncio
+async def test_send_audio_flushes_audio_stream_end(manager):
+    """録音バッファ送信後に audio_stream_end=True を送って flush する。"""
+    fake_session = make_fake_session([])
+    manager._session = fake_session
+
+    await manager.send_audio(b"\x00" * 3200)
+
+    assert fake_session.send_realtime_input.await_count == 2
+    _, last_kwargs = fake_session.send_realtime_input.await_args_list[-1]
+    assert last_kwargs == {"audio_stream_end": True}

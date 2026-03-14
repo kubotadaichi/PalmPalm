@@ -14,7 +14,7 @@ import httpx
 from google import genai
 from google.genai import types
 
-MODEL = "gemini-2.5-flash-live"
+MODEL = "gemini-2.5-flash-native-audio-preview-12-2025"
 AGITATION_API_URL = os.getenv("AGITATION_API_URL", "")
 
 SYSTEM_INSTRUCTION = """\
@@ -95,6 +95,7 @@ class LiveSessionManager:
         await self._session.send_realtime_input(
             audio=types.Blob(data=pcm_bytes, mime_type="audio/pcm;rate=16000")
         )
+        await self._session.send_realtime_input(audio_stream_end=True)
 
     async def receive(self) -> AsyncGenerator[dict, None]:
         """
