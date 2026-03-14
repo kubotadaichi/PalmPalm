@@ -10,7 +10,7 @@ class AgitationEngine:
     """
     SPIKE_THRESHOLD = 30  # 前回比+30以上で急上昇と判定
 
-    def __init__(self, window_seconds: int = 10, max_pulses: int = 20):
+    def __init__(self, window_seconds: int = 10, max_pulses: int = 5):
         self.window_seconds = window_seconds
         self.max_pulses = max_pulses
         self._pulses: deque[float] = deque()
