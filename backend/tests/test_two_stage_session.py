@@ -141,31 +141,35 @@ def test_build_stage1_system_no_phase_mentions():
 def test_build_stage2_prompt_low_agitation():
     manager = TwoStageSessionManager(client=_FakeClient([]))
     prompt = manager._build_stage2_prompt(level=20, trend="stable", stage1_text="何かが見えます")
-    assert "level" in prompt or "20" in prompt
+    assert "level=20%" in prompt
+    assert "trend=stable" in prompt
 
 
 def test_build_stage2_prompt_high_rising_agitation():
     manager = TwoStageSessionManager(client=_FakeClient([]))
     prompt = manager._build_stage2_prompt(level=75, trend="rising", stage1_text="あなたは孤独です")
-    assert "75" in prompt or "rising" in prompt
+    assert "level=75%" in prompt
+    assert "trend=rising" in prompt
 
 
 def test_build_stage2_prompt_max_agitation():
     manager = TwoStageSessionManager(client=_FakeClient([]))
     prompt = manager._build_stage2_prompt(level=85, trend="rising", stage1_text="隠せません")
-    assert "85" in prompt or "rising" in prompt
+    assert "level=85%" in prompt
+    assert "trend=rising" in prompt
 
 
 def test_build_stage2_prompt_falling_agitation():
     manager = TwoStageSessionManager(client=_FakeClient([]))
     prompt = manager._build_stage2_prompt(level=65, trend="falling", stage1_text="体が覚えています")
-    assert "falling" in prompt or "65" in prompt
+    assert "level=65%" in prompt
+    assert "trend=falling" in prompt
 
 
 def test_build_stage2_prompt_ends_with_question_rule():
     manager = TwoStageSessionManager(client=_FakeClient([]))
     prompt = manager._build_stage2_prompt(level=50, trend="rising", stage1_text="何か感じます")
-    assert "問いかけ" in prompt or "？" in prompt
+    assert "？" in prompt
 
 
 def test_build_stage2_prompt_contains_stage1_text():
