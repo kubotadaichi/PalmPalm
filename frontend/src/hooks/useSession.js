@@ -1,13 +1,13 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 
+const BACKEND_URL = import.meta.env.VITE_BACKEND_URL || ''
 const MAX_RECORD_SECONDS = 10
-const MICROPHONE_UNAVAILABLE_MESSAGE =
-  'この環境ではマイクが利用できません。HTTPS または localhost で開いてください。'
 
 async function* readSseStream(response) {
   const reader = response.body.getReader()
   const decoder = new TextDecoder()
   let buffer = ''
+
   while (true) {
     const { done, value } = await reader.read()
     if (done) break
@@ -28,40 +28,47 @@ async function* readSseStream(response) {
 
 export function useSession({ enabled = false } = {}) {
   const [turn, setTurn] = useState('user')
-  const [aiText, setAiText] = useState('')
   const [vadError, setVadError] = useState(null)
   const [timeLeft, setTimeLeft] = useState(MAX_RECORD_SECONDS)
 
+  const sessionIdRef = useRef(null)
+  const audioCtxRef = useRef(null)
+  const captureCtxRef = useRef(null)
+  const workletNodeRef = useRef(null)
   const streamRef = useRef(null)
-  const recorderRef = useRef(null)
-  const chunksRef = useRef([])
+  const pcmChunksRef = useRef([])
+  const nextPlayTimeRef = useRef(0)
   const countdownRef = useRef(null)
   const stopTimerRef = useRef(null)
   const enabledRef = useRef(enabled)
 
-  const audioQueueRef = useRef([])
-  const isPlayingRef = useRef(false)
-  const sseCompleteRef = useRef(false)
+  useEffect(() => {
+    enabledRef.current = enabled
+  }, [enabled])
 
-  const playNext = useCallback(() => {
-    if (isPlayingRef.current) return
-    const url = audioQueueRef.current.shift()
-    if (!url) {
-      if (sseCompleteRef.current) setTurn('user')
-      return
+  const startSession = useCallback(async () => {
+    try {
+      const response = await fetch(`${BACKEND_URL}/api/session/start`, { method: 'POST' })
+      const { session_id: sessionId } = await response.json()
+      sessionIdRef.current = sessionId
+      console.log('[useSession] session started:', sessionId)
+    } catch (err) {
+      setVadError(`セッション開始失敗: ${err.message}`)
     }
-    isPlayingRef.current = true
-    const audio = new Audio(url)
-    const onDone = () => {
-      isPlayingRef.current = false
-      playNext()
-    }
-    audio.onended = onDone
-    audio.onerror = onDone
-    audio.play().catch(onDone)
   }, [])
 
-  const clearTimers = useCallback(() => {
+  const stopSession = useCallback(async () => {
+    const sessionId = sessionIdRef.current
+    if (!sessionId) return
+    sessionIdRef.current = null
+    try {
+      await fetch(`${BACKEND_URL}/api/session?session_id=${sessionId}`, { method: 'DELETE' })
+    } catch {
+      // ignore
+    }
+  }, [])
+
+  const stopRecording = useCallback(async () => {
     if (countdownRef.current) {
       clearInterval(countdownRef.current)
       countdownRef.current = null
@@ -70,153 +77,151 @@ export function useSession({ enabled = false } = {}) {
       clearTimeout(stopTimerRef.current)
       stopTimerRef.current = null
     }
-  }, [])
+    setTimeLeft(MAX_RECORD_SECONDS)
 
-  const resetPlaybackState = useCallback(() => {
-    audioQueueRef.current = []
-    isPlayingRef.current = false
-    sseCompleteRef.current = false
-  }, [])
+    const worklet = workletNodeRef.current
+    if (worklet) {
+      worklet.disconnect()
+      workletNodeRef.current = null
+    }
 
-  const startRecording = useCallback(async () => {
-    setVadError(null)
-    const mediaDevices = globalThis.navigator?.mediaDevices
-    if (!mediaDevices?.getUserMedia || typeof MediaRecorder === 'undefined') {
-      setVadError(MICROPHONE_UNAVAILABLE_MESSAGE)
+    const chunks = pcmChunksRef.current
+    pcmChunksRef.current = []
+    if (!enabledRef.current || chunks.length === 0) {
+      setTurn('user')
       return
     }
-    try {
-      if (!streamRef.current) {
-        streamRef.current = await mediaDevices.getUserMedia({ audio: true })
-      }
-      const preferredType = 'audio/webm;codecs=opus'
-      const options = MediaRecorder.isTypeSupported(preferredType)
-        ? { mimeType: preferredType }
-        : undefined
-      const recorder = new MediaRecorder(streamRef.current, options)
-      recorderRef.current = recorder
-      chunksRef.current = []
 
-      recorder.ondataavailable = (e) => {
-        if (e.data?.size > 0) chunksRef.current.push(e.data)
-      }
-      recorder.onerror = (e) => setVadError(e.error?.message ?? '録音エラー')
-      recorder.onstop = async () => {
-        clearTimers()
-        setTimeLeft(MAX_RECORD_SECONDS)
-        const blob = new Blob(chunksRef.current, {
-          type: recorder.mimeType || 'audio/webm',
-        })
-        chunksRef.current = []
-        if (!enabledRef.current) {
-          return
-        }
-        if (blob.size > 0) {
-          await sendAudioRef.current?.(blob, recorder.mimeType || 'audio/webm')
-        } else {
-          setTurn('user')
-        }
-      }
-
-      recorder.start()
-      setTimeLeft(MAX_RECORD_SECONDS)
-      countdownRef.current = setInterval(
-        () => setTimeLeft((t) => Math.max(0, t - 1)),
-        1000,
-      )
-      stopTimerRef.current = setTimeout(() => {
-        if (recorderRef.current?.state === 'recording') recorderRef.current.stop()
-      }, MAX_RECORD_SECONDS * 1000)
-    } catch (err) {
-      setVadError(err?.message ?? 'マイク初期化失敗')
+    const total = chunks.reduce((sum, chunk) => sum + chunk.length, 0)
+    const merged = new Int16Array(total)
+    let offset = 0
+    for (const chunk of chunks) {
+      merged.set(chunk, offset)
+      offset += chunk.length
     }
-  }, [clearTimers])
 
-  const sendAudioRef = useRef(null)
+    const sessionId = sessionIdRef.current
+    if (!sessionId) {
+      setTurn('user')
+      return
+    }
 
-  useEffect(() => {
-    enabledRef.current = enabled
-  }, [enabled])
-
-  const sendAudio = useCallback(async (blob, mimeType) => {
-    resetPlaybackState()
     setTurn('ai')
-    setAiText('')
+
+    if (!audioCtxRef.current || audioCtxRef.current.state === 'closed') {
+      audioCtxRef.current = new AudioContext({ sampleRate: 24000 })
+    }
+    const audioCtx = audioCtxRef.current
+    nextPlayTimeRef.current = audioCtx.currentTime
 
     try {
-      const response = await fetch('/api/audio', {
+      const response = await fetch(`${BACKEND_URL}/api/audio?session_id=${sessionId}`, {
         method: 'POST',
-        headers: { 'Content-Type': mimeType },
-        body: blob,
+        headers: { 'Content-Type': 'audio/octet-stream' },
+        body: merged.buffer,
       })
       for await (const event of readSseStream(response)) {
-        if (event.type === 'stage1' || event.type === 'stage2') {
-          setAiText((prev) => prev + event.text)
-          if (event.audio_url) {
-            audioQueueRef.current.push(event.audio_url)
-            playNext()
+        if (event.type === 'audio_chunk') {
+          const raw = atob(event.data)
+          const int16 = new Int16Array(raw.length / 2)
+          for (let i = 0; i < int16.length; i++) {
+            int16[i] = raw.charCodeAt(i * 2) | (raw.charCodeAt(i * 2 + 1) << 8)
           }
-        } else if (event.type === 'turn_end') {
-          sseCompleteRef.current = true
-          if (!isPlayingRef.current && audioQueueRef.current.length === 0) {
-            setTurn('user')
+
+          const float32 = new Float32Array(int16.length)
+          for (let i = 0; i < int16.length; i++) {
+            float32[i] = int16[i] / 32768
           }
+
+          const buffer = audioCtx.createBuffer(1, float32.length, 24000)
+          buffer.copyToChannel(float32, 0)
+          const source = audioCtx.createBufferSource()
+          source.buffer = buffer
+          source.connect(audioCtx.destination)
+          const startAt = Math.max(audioCtx.currentTime, nextPlayTimeRef.current)
+          source.start(startAt)
+          nextPlayTimeRef.current = startAt + buffer.duration
+        } else if (event.type === 'turn_complete') {
+          const remaining = nextPlayTimeRef.current - audioCtx.currentTime
+          setTimeout(() => setTurn('user'), Math.max(0, remaining * 1000))
         }
       }
     } catch (err) {
       console.error('[useSession] sendAudio error:', err)
       setTurn('user')
     }
-  }, [playNext, resetPlaybackState])
+  }, [])
 
-  useEffect(() => {
-    sendAudioRef.current = sendAudio
-  }, [sendAudio])
-
-  const startRecordingRef = useRef(startRecording)
-
-  useEffect(() => {
-    startRecordingRef.current = startRecording
-  }, [startRecording])
-
-  useEffect(() => {
-    if (!enabled) {
-      clearTimers()
-      if (recorderRef.current?.state === 'recording') recorderRef.current.stop()
+  const startRecording = useCallback(async () => {
+    setVadError(null)
+    const mediaDevices = globalThis.navigator?.mediaDevices
+    if (!mediaDevices?.getUserMedia) {
+      setVadError('マイクが利用できません。HTTPS または localhost で開いてください。')
       return
     }
-    if (turn === 'user') {
-      startRecordingRef.current()
-    } else {
-      clearTimers()
-      if (recorderRef.current?.state === 'recording') recorderRef.current.stop()
+
+    try {
+      if (!streamRef.current) {
+        streamRef.current = await mediaDevices.getUserMedia({ audio: true })
+      }
+      if (!captureCtxRef.current || captureCtxRef.current.state === 'closed') {
+        captureCtxRef.current = new AudioContext({ sampleRate: 16000 })
+      }
+      const captureCtx = captureCtxRef.current
+      await captureCtx.audioWorklet.addModule('/pcm-processor.js')
+
+      const source = captureCtx.createMediaStreamSource(streamRef.current)
+      const worklet = new AudioWorkletNode(captureCtx, 'pcm-processor')
+      workletNodeRef.current = worklet
+
+      pcmChunksRef.current = []
+      worklet.port.onmessage = (event) => {
+        pcmChunksRef.current.push(new Int16Array(event.data))
+      }
+      source.connect(worklet)
+      worklet.connect(captureCtx.destination)
+
+      setTimeLeft(MAX_RECORD_SECONDS)
+      countdownRef.current = setInterval(
+        () => setTimeLeft((value) => Math.max(0, value - 1)),
+        1000,
+      )
+      stopTimerRef.current = setTimeout(() => stopRecording(), MAX_RECORD_SECONDS * 1000)
+    } catch (err) {
+      setVadError(err?.message ?? 'マイク初期化失敗')
     }
-  }, [enabled, turn, clearTimers])
+  }, [stopRecording])
 
   useEffect(() => {
     if (!enabled) {
-      clearTimers()
+      stopSession()
       setVadError(null)
       setTimeLeft(MAX_RECORD_SECONDS)
-      resetPlaybackState()
-      setAiText('')
       setTurn('user')
       return
     }
-    setVadError(null)
-    setTimeLeft(MAX_RECORD_SECONDS)
-    resetPlaybackState()
-    setAiText('')
-    setTurn('user')
-  }, [enabled, clearTimers, resetPlaybackState])
+    startSession()
+  }, [enabled, startSession, stopSession])
+
+  useEffect(() => {
+    if (!enabled) return
+    if (turn === 'user') {
+      startRecording()
+    } else if (workletNodeRef.current) {
+      workletNodeRef.current.disconnect()
+      workletNodeRef.current = null
+    }
+  }, [enabled, turn, startRecording])
 
   useEffect(() => {
     return () => {
-      clearTimers()
-      if (recorderRef.current?.state === 'recording') recorderRef.current.stop()
-      streamRef.current?.getTracks().forEach((t) => t.stop())
+      if (countdownRef.current) clearInterval(countdownRef.current)
+      if (stopTimerRef.current) clearTimeout(stopTimerRef.current)
+      streamRef.current?.getTracks().forEach((track) => track.stop())
+      captureCtxRef.current?.close()
+      audioCtxRef.current?.close()
     }
-  }, [clearTimers])
+  }, [])
 
-  return { turn, aiText, vadError, timeLeft }
+  return { turn, vadError, timeLeft }
 }
