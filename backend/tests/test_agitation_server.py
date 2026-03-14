@@ -59,3 +59,40 @@ async def test_pulse_returns_ok():
         resp = await ac.post("/pulse")
     assert resp.status_code == 200
     assert resp.json() == {"ok": True}
+
+
+@pytest.mark.asyncio
+async def test_agitation_window_empty():
+    """ウィンドウ内にパルスなし → level=0"""
+    async with AsyncClient(
+        transport=ASGITransport(app=app),
+        base_url="http://test",
+    ) as ac:
+        import time
+
+        t = time.time()
+        resp = await ac.get(f"/agitation/window?from_ts={t}&to_ts={t + 1}")
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["level"] == 0
+    assert "trend" in data
+    assert "peak" in data
+
+
+@pytest.mark.asyncio
+async def test_agitation_window_with_pulses():
+    """ウィンドウ内にパルスあり → level > 0"""
+    import time
+
+    async with AsyncClient(
+        transport=ASGITransport(app=app),
+        base_url="http://test",
+    ) as ac:
+        t_start = time.time()
+        for _ in range(5):
+            await ac.post("/pulse")
+        t_end = time.time()
+        resp = await ac.get(f"/agitation/window?from_ts={t_start}&to_ts={t_end}")
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["level"] > 0
