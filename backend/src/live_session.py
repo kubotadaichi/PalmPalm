@@ -72,6 +72,11 @@ class LiveSessionManager:
             response_modalities=["AUDIO"],
             system_instruction=SYSTEM_INSTRUCTION,
             tools=[types.Tool(function_declarations=[GET_AGITATION_DECLARATION])],
+            input_audio_transcription=types.AudioTranscriptionConfig(),
+            realtime_input_config=types.RealtimeInputConfig(
+                activity_handling=types.ActivityHandling.START_OF_ACTIVITY_INTERRUPTS,
+                turn_coverage=types.TurnCoverage.TURN_INCLUDES_ONLY_ACTIVITY,
+            ),
             context_window_compression=types.ContextWindowCompressionConfig(
                 trigger_tokens=100000,
                 sliding_window=types.SlidingWindow(target_tokens=80000),
@@ -112,7 +117,11 @@ class LiveSessionManager:
 
     async def flush_input_audio(self) -> None:
         """入力音声の一区切りを Live API へ通知する。"""
-        await self._session.send_realtime_input(audio_stream_end=True)
+        await self._session.send_realtime_input(activity_end=types.ActivityEnd())
+
+    async def start_input_audio(self) -> None:
+        """入力音声の開始を Live API へ通知する。"""
+        await self._session.send_realtime_input(activity_start=types.ActivityStart())
 
     async def send_audio(self, pcm_bytes: bytes) -> None:
         """互換用: PCM を 1 回送って flush する。"""
@@ -124,40 +133,88 @@ class LiveSessionManager:
         受信イベントを yield する:
           {"type": "audio_chunk", "data": "<base64 PCM 24kHz>"}
           {"type": "turn_complete"}
-        """
-        async for response in self._session.receive():
-            audio_data = self._extract_audio_data(response)
-            if audio_data:
-                if self._ai_speak_start is None:
-                    self._ai_speak_start = time.time()
-                self._received_audio_chunks += 1
-                print(
-                    f"[LiveSession] receive_audio_chunk count={self._received_audio_chunks} "
-                    f"bytes={len(audio_data)} ts={time.time():.3f}",
-                    flush=True,
-                )
-                yield {
-                    "type": "audio_chunk",
-                    "data": base64.b64encode(audio_data).decode(),
-                }
 
-            if response.tool_call:
-                for call in response.tool_call.function_calls:
-                    self._tool_call_count += 1
+        google-genai SDK の session.receive() は 1 ターン分で終了するため、
+        while True でターンをまたいで再呼び出しする。
+        """
+        while True:
+            got_response = False
+            async for response in self._session.receive():
+                got_response = True
+                server_content = getattr(response, "server_content", None)
+                should_emit_turn_complete = False
+                input_transcription = getattr(server_content, "input_transcription", None)
+                input_text = getattr(input_transcription, "text", None)
+                if input_text:
                     print(
-                        f"[LiveSession] receive_tool_call count={self._tool_call_count} "
-                        f"name={call.name} ts={time.time():.3f}",
+                        f"[LiveSession] input_transcription text={input_text!r} ts={time.time():.3f}",
                         flush=True,
                     )
-                    await self._handle_tool_call(call)
+                if server_content:
+                    waiting_for_input = getattr(server_content, "waiting_for_input", None)
+                    if waiting_for_input is not None:
+                        print(
+                            f"[LiveSession] waiting_for_input value={waiting_for_input} ts={time.time():.3f}",
+                            flush=True,
+                        )
+                    interrupted = getattr(server_content, "interrupted", None)
+                    if interrupted:
+                        print(
+                            f"[LiveSession] interrupted ts={time.time():.3f}",
+                            flush=True,
+                        )
+                    generation_complete = getattr(server_content, "generation_complete", None)
+                    if generation_complete:
+                        print(
+                            f"[LiveSession] generation_complete ts={time.time():.3f}",
+                            flush=True,
+                        )
+                        should_emit_turn_complete = True
+                    turn_complete_reason = getattr(server_content, "turn_complete_reason", None)
+                    if turn_complete_reason:
+                        print(
+                            f"[LiveSession] turn_complete_reason value={turn_complete_reason} "
+                            f"ts={time.time():.3f}",
+                            flush=True,
+                        )
+                audio_data = self._extract_audio_data(response)
+                if audio_data:
+                    if self._ai_speak_start is None:
+                        self._ai_speak_start = time.time()
+                    self._received_audio_chunks += 1
+                    print(
+                        f"[LiveSession] receive_audio_chunk count={self._received_audio_chunks} "
+                        f"bytes={len(audio_data)} ts={time.time():.3f}",
+                        flush=True,
+                    )
+                    yield {
+                        "type": "audio_chunk",
+                        "data": base64.b64encode(audio_data).decode(),
+                    }
 
-            if response.server_content and response.server_content.turn_complete:
-                print(
-                    f"[LiveSession] receive_turn_complete ts={time.time():.3f}",
-                    flush=True,
-                )
-                yield {"type": "turn_complete"}
-                self._ai_speak_start = None
+                if response.tool_call:
+                    for call in response.tool_call.function_calls:
+                        self._tool_call_count += 1
+                        print(
+                            f"[LiveSession] receive_tool_call count={self._tool_call_count} "
+                            f"name={call.name} ts={time.time():.3f}",
+                            flush=True,
+                        )
+                        await self._handle_tool_call(call)
+
+                if server_content and server_content.turn_complete:
+                    should_emit_turn_complete = True
+
+                if should_emit_turn_complete:
+                    print(
+                        f"[LiveSession] receive_turn_complete ts={time.time():.3f}",
+                        flush=True,
+                    )
+                    yield {"type": "turn_complete"}
+                    self._ai_speak_start = None
+
+            if not got_response:
+                break
 
     def _extract_audio_data(self, response) -> bytes | None:
         """Live API レスポンスから音声バイト列を取り出す。"""

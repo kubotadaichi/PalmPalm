@@ -2,6 +2,7 @@
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
+from google.genai import types
 
 from src.live_session import LiveSessionManager
 
@@ -21,24 +22,40 @@ class FakeToolCallWrapper:
 
 
 class FakeServerContent:
-    def __init__(self, audio_data=None, turn_complete=False):
+    def __init__(self, audio_data=None, turn_complete=False, generation_complete=False):
         self.parts = [MagicMock(inline_data=MagicMock(data=audio_data))] if audio_data else []
         self.model_turn = MagicMock(parts=self.parts) if audio_data else None
         self.turn_complete = turn_complete
+        self.generation_complete = generation_complete
 
 
 class FakeResponse:
-    def __init__(self, audio_data=None, tool_call=None, turn_complete=False):
+    def __init__(
+        self,
+        audio_data=None,
+        tool_call=None,
+        turn_complete=False,
+        generation_complete=False,
+    ):
         self.data = audio_data
         self.tool_call = FakeToolCallWrapper(tool_call) if tool_call else None
-        self.server_content = FakeServerContent(audio_data, turn_complete)
+        self.server_content = FakeServerContent(audio_data, turn_complete, generation_complete)
 
 
 def make_fake_session(responses):
-    """指定した responses を順に返す AsyncContextManager モック。"""
+    """指定した responses を順に返す AsyncContextManager モック。
+    receive() は 1 ターン分を yield して終了する SDK の仕様を再現するため、
+    2 回目以降の呼び出しでは空のイテレータを返す（while True ループを終了させる）。
+    """
     session = AsyncMock()
 
+    call_count = 0
+
     async def fake_receive():
+        nonlocal call_count
+        if call_count > 0:
+            return  # 2回目以降は空 → got_response=False → break
+        call_count += 1
         for response in responses:
             yield response
 
@@ -124,6 +141,20 @@ async def test_receive_resets_ai_speak_start_on_turn_complete(manager):
 
 
 @pytest.mark.asyncio
+async def test_receive_treats_generation_complete_as_turn_complete(manager):
+    pcm = b"\x00\x01" * 100
+    responses = [FakeResponse(audio_data=pcm), FakeResponse(generation_complete=True)]
+    fake_session = make_fake_session(responses)
+    manager._session = fake_session
+
+    events = []
+    async for event in manager.receive():
+        events.append(event)
+
+    assert any(event["type"] == "turn_complete" for event in events)
+
+
+@pytest.mark.asyncio
 async def test_receive_handles_tool_call(manager):
     """tool_call を受け取ったら send_tool_response を呼ぶ。"""
     tool_call = FakeToolCall()
@@ -156,7 +187,7 @@ async def test_send_audio_calls_send_realtime_input(manager):
 
 @pytest.mark.asyncio
 async def test_send_audio_flushes_audio_stream_end(manager):
-    """録音バッファ送信後に audio_stream_end=True を送って flush する。"""
+    """録音バッファ送信後に activity_end を送って flush する。"""
     fake_session = make_fake_session([])
     manager._session = fake_session
 
@@ -164,7 +195,7 @@ async def test_send_audio_flushes_audio_stream_end(manager):
 
     assert fake_session.send_realtime_input.await_count == 2
     _, last_kwargs = fake_session.send_realtime_input.await_args_list[-1]
-    assert last_kwargs == {"audio_stream_end": True}
+    assert isinstance(last_kwargs["activity_end"], types.ActivityEnd)
 
 
 @pytest.mark.asyncio
@@ -186,7 +217,21 @@ async def test_flush_input_audio_sends_audio_stream_end(manager):
 
     await manager.flush_input_audio()
 
-    fake_session.send_realtime_input.assert_awaited_once_with(audio_stream_end=True)
+    fake_session.send_realtime_input.assert_awaited_once()
+    _, kwargs = fake_session.send_realtime_input.await_args
+    assert isinstance(kwargs["activity_end"], types.ActivityEnd)
+
+
+@pytest.mark.asyncio
+async def test_start_input_audio_sends_activity_start(manager):
+    fake_session = make_fake_session([])
+    manager._session = fake_session
+
+    await manager.start_input_audio()
+
+    fake_session.send_realtime_input.assert_awaited_once()
+    _, kwargs = fake_session.send_realtime_input.await_args
+    assert isinstance(kwargs["activity_start"], types.ActivityStart)
 
 
 @pytest.mark.asyncio
@@ -208,3 +253,34 @@ async def test_receive_yields_multiple_audio_chunks_in_order(manager):
 
     audio_events = [event for event in events if event["type"] == "audio_chunk"]
     assert len(audio_events) == 2
+
+
+@pytest.mark.asyncio
+async def test_connect_configures_server_side_vad():
+    fake_session = AsyncMock()
+    fake_ctx = AsyncMock()
+    fake_ctx.__aenter__.return_value = fake_session
+
+    fake_client = MagicMock()
+    fake_client.aio.live.connect.return_value = fake_ctx
+
+    manager = LiveSessionManager(client=fake_client)
+
+    await manager.connect()
+
+    _, kwargs = fake_client.aio.live.connect.call_args
+    config = kwargs["config"]
+    realtime_input_config = config.realtime_input_config
+
+    assert realtime_input_config is not None
+    assert (
+        realtime_input_config.activity_handling
+        == types.ActivityHandling.START_OF_ACTIVITY_INTERRUPTS
+    )
+    assert (
+        realtime_input_config.turn_coverage
+        == types.TurnCoverage.TURN_INCLUDES_ONLY_ACTIVITY
+    )
+
+    # automatic_activity_detection は設定しない → Gemini Live API の自動 VAD を有効にする
+    assert realtime_input_config.automatic_activity_detection is None

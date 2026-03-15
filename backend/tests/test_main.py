@@ -10,6 +10,7 @@ def mock_manager():
     manager = MagicMock()
     manager.connect = AsyncMock()
     manager.disconnect = AsyncMock()
+    manager.start_input_audio = AsyncMock()
     manager.send_audio_chunk = AsyncMock()
     manager.flush_input_audio = AsyncMock()
 
@@ -72,3 +73,16 @@ def test_ws_input_audio_end_calls_flush(mock_manager):
             ws.send_json({"type": "input_audio_end"})
 
     mock_manager.flush_input_audio.assert_awaited()
+
+
+def test_ws_input_audio_start_is_ignored(mock_manager):
+    """input_audio_start は Live VAD 主導設計では無視される。"""
+    with patch("src.main.LiveSessionManager", return_value=mock_manager):
+        from src.main import app
+
+        client = TestClient(app)
+        with client.websocket_connect("/ws/session") as ws:
+            ws.receive_json()
+            ws.send_json({"type": "input_audio_start"})
+
+    mock_manager.start_input_audio.assert_not_awaited()

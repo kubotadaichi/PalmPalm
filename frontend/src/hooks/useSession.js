@@ -29,16 +29,11 @@ export function useSession({ enabled = false } = {}) {
   const nextPlayTimeRef = useRef(0)
   const enabledRef = useRef(enabled)
   const moduleLoadedRef = useRef(false)
-  const turnRef = useRef(turn)
   const sessionReadyRef = useRef(sessionReady)
 
   useEffect(() => {
     enabledRef.current = enabled
   }, [enabled])
-
-  useEffect(() => {
-    turnRef.current = turn
-  }, [turn])
 
   useEffect(() => {
     sessionReadyRef.current = sessionReady
@@ -77,6 +72,7 @@ export function useSession({ enabled = false } = {}) {
   const stopRecording = useCallback(() => {
     const worklet = workletNodeRef.current
     if (worklet) {
+      worklet.port.onmessage = null
       worklet.disconnect()
       workletNodeRef.current = null
     }
@@ -108,15 +104,10 @@ export function useSession({ enabled = false } = {}) {
       const worklet = new AudioWorkletNode(captureCtx, 'pcm-processor')
       workletNodeRef.current = worklet
 
+      // PCM を常時送信。ターン管理は Gemini Live API の自動 VAD に委ねる
       worklet.port.onmessage = (event) => {
-        const pcm = new Int16Array(event.data)
         const socket = socketRef.current
-        if (
-          !enabledRef.current ||
-          turnRef.current !== 'user' ||
-          !sessionReadyRef.current ||
-          socket?.readyState !== WebSocket.OPEN
-        ) {
+        if (!enabledRef.current || !sessionReadyRef.current || socket?.readyState !== WebSocket.OPEN) {
           return
         }
         socket.send(event.data)
@@ -124,6 +115,7 @@ export function useSession({ enabled = false } = {}) {
 
       source.connect(worklet)
       worklet.connect(captureCtx.destination)
+      console.log('[useSession] recording started')
     } catch (err) {
       setVadError(err?.message ?? 'マイク初期化失敗')
     }
@@ -142,17 +134,20 @@ export function useSession({ enabled = false } = {}) {
           return
         }
         if (message.type === 'audio_chunk') {
+          console.log('[useSession] received audio_chunk')
           setTurn('ai')
           void playAudioChunk(message.data)
           return
         }
         if (message.type === 'turn_complete') {
+          console.log('[useSession] received turn_complete')
           const audioCtx = audioCtxRef.current
           const remaining = audioCtx ? nextPlayTimeRef.current - audioCtx.currentTime : 0
           setTimeout(() => setTurn('user'), Math.max(0, remaining * 1000))
           return
         }
         if (message.type === 'error') {
+          console.log('[useSession] received error', message)
           setVadError(message.message ?? 'セッションエラー')
           setTurn('user')
         }
@@ -162,9 +157,11 @@ export function useSession({ enabled = false } = {}) {
     }
 
     socket.onerror = () => {
+      console.log('[useSession] websocket error')
       setVadError('WebSocket 接続に失敗しました')
     }
-    socket.onclose = () => {
+    socket.onclose = (event) => {
+      console.log(`[useSession] websocket close code=${event.code} reason=${event.reason}`)
       setSessionReady(false)
     }
     socketRef.current = socket
@@ -180,6 +177,7 @@ export function useSession({ enabled = false } = {}) {
     }
   }, [])
 
+  // セッション開始/終了
   useEffect(() => {
     if (!enabled) {
       stopRecording()
@@ -193,14 +191,11 @@ export function useSession({ enabled = false } = {}) {
     startSession()
   }, [enabled, startSession, stopRecording, stopSession])
 
+  // session_ready になったら録音開始し、以後ずっと送信し続ける
   useEffect(() => {
     if (!enabled || !sessionReady) return
-    if (turn === 'user') {
-      void startRecording()
-    } else {
-      stopRecording()
-    }
-  }, [enabled, sessionReady, turn, startRecording, stopRecording])
+    void startRecording()
+  }, [enabled, sessionReady, startRecording])
 
   useEffect(() => {
     return () => {

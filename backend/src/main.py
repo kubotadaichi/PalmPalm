@@ -72,7 +72,7 @@ async def ws_session(websocket: WebSocket):
                 )
                 if message_type == "session_end":
                     break
-                # Binary audio frames are the primary turn input path.
+                # input_audio_end は補助経路として残す（通常は Live VAD が処理）
                 if message_type == "input_audio_end":
                     await manager.flush_input_audio()
     except WebSocketDisconnect:
