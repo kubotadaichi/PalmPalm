@@ -60,3 +60,15 @@ def test_ws_forwards_audio_chunk_and_turn_complete(mock_manager):
             assert ws.receive_json()["type"] == "session_ready"
             assert ws.receive_json()["type"] == "audio_chunk"
             assert ws.receive_json()["type"] == "turn_complete"
+
+
+def test_ws_input_audio_end_calls_flush(mock_manager):
+    with patch("src.main.LiveSessionManager", return_value=mock_manager):
+        from src.main import app
+
+        client = TestClient(app)
+        with client.websocket_connect("/ws/session") as ws:
+            ws.receive_json()
+            ws.send_json({"type": "input_audio_end"})
+
+    mock_manager.flush_input_audio.assert_awaited()

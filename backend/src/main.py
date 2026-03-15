@@ -1,5 +1,6 @@
 # Docker コンテナで IPv6 が到達不能な環境向け: DNS 解決で IPv4 のみ返すように上書き
 import asyncio
+import json
 import socket as _socket
 
 from dotenv import load_dotenv
@@ -50,6 +51,12 @@ async def ws_session(websocket: WebSocket):
                 break
             if message.get("bytes") is not None:
                 await manager.send_audio_chunk(message["bytes"])
+            if message.get("text") is not None:
+                payload = json.loads(message["text"])
+                if payload.get("type") == "input_audio_end":
+                    await manager.flush_input_audio()
+                if payload.get("type") == "session_end":
+                    break
     except WebSocketDisconnect:
         pass
     finally:
