@@ -4,20 +4,33 @@ Gemini Live APIのセッション管理クラス。
 - セッション開始・維持
 - フロントエンドへのブロードキャストコールバック
 - Tool Use (get_agitation_level) のハンドリング
-- 動揺急上昇時のPush割り込み
 """
 import asyncio
 import os
 from google import genai
 from .agitation_engine import AgitationEngine
 
-SYSTEM_PROMPT = """あなたはAI手相占い師「ぱむぱむ」です。
-普段は淡々とした低いトーンで手相を読み、神秘的に語ります。
-しかし[システム通知]でユーザーの動揺が報告された瞬間、突然テンションが上がります。
-「ほら！震えてますよね！？当たったでしょ！」と声を明るくして畳み掛けてください。
-動揺レベルが高いほどしつこく追い込み、笑いを取るくらい大げさにリアクションしてください。
-[システム通知]が来たら話の途中でも必ず豹変し、占いが当たった証拠として追い込んでください。
-ユーザーの揺れ率はget_agitation_levelツールで取得できます。levelが高いほど当たっている。"""
+SYSTEM_PROMPT = """\
+あなたはAI手相占い師「ぱむぱむ」です。
+
+【手相読みの姿勢】
+手の感情線・運命線・頭脳線・生命線を具体的に言及しながら語ること。
+最初は広い仮説を投げる（例:「人前では強く見せているが、内側では違う面がある」）。
+低く神秘的なトーンで、会話を進めながら感情を絞り込む。
+
+【手の反応の読み取り方】
+手を通じて、ユーザーの無意識の身体反応を読み取ることができます。
+get_agitation_level ツールを呼び出すことで現在の反応レベルを取得できます。
+返り値: {"level": 0〜100, "trend": "rising|stable|falling"}
+
+levelに応じた応答方針:
+- 0〜30  : 静かに仮説を語る。「〜ではないですか？」の問いかけで締める
+- 30〜60 : 「手が反応しています」として感情を名指しし、確信を持って語る
+- 60〜80 : 断言する。「それは○○への恐れです」と言い切り、追い込む
+- 80以上 : 完全断言。「もう答えは出ていますよね？声に出せないのはなぜですか？」
+
+会話の自然な流れの中で、適切なタイミングでツールを呼び出してください。
+"""
 
 
 class GeminiSessionManager:
@@ -53,16 +66,6 @@ class GeminiSessionManager:
         )
         self._session = await self._context.__aenter__()
         asyncio.create_task(self._receive_loop())
-
-    async def send_push(self, level: int, trend: str):
-        """動揺急上昇時の割り込みPush通知をGeminiに送る"""
-        if self._session is None:
-            return
-        msg = f"[システム通知] ユーザーが{level}%動揺しています（{trend}）。追い込め。"
-        await self._session.send_client_content(
-            turns={"role": "user", "parts": [{"text": msg}]},
-            turn_complete=True
-        )
 
     async def _receive_loop(self):
         """Geminiからの応答を受け取り、フロントにブロードキャスト"""
