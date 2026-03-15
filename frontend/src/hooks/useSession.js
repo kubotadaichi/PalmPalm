@@ -194,6 +194,7 @@ export function useSession({ enabled = false } = {}) {
     const socket = socketRef.current
     socketRef.current = null
     if (socket?.readyState === WebSocket.OPEN) {
+      socket.send(JSON.stringify({ type: 'session_end' }))
       socket.close()
     }
   }, [])
