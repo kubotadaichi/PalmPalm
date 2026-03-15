@@ -1,13 +1,13 @@
-import { useEffect, useState } from 'react'
+import React, { useEffect, useState } from 'react'
 
 const STEPS = [
-  { label: '手を乗せる' },
-  { label: '深呼吸' },
-  { label: '落ち着いたら\n自分でスタート' },
+  { label: '手をのせる', img: '/p2_part1.png' },
+  { label: '深呼吸',     img: '/p2_part2.png' },
+  { label: '５秒後開始', img: '/p2_part3.png' },
 ]
 
 export function RulesPage({ onReady }) {
-  const [countdown, setCountdown] = useState(2)
+  const [countdown, setCountdown] = useState(5)
 
   useEffect(() => {
     if (countdown <= 0) {
@@ -19,19 +19,19 @@ export function RulesPage({ onReady }) {
   }, [countdown, onReady])
 
   return (
-    <div className="flex flex-col items-center justify-center h-screen bg-gray-900 text-white">
-      <h2 className="text-3xl font-bold mb-12">ルール説明</h2>
-      <div className="flex gap-10 mb-12">
-        {STEPS.map((step, i) => (
-          <div key={i} className="flex flex-col items-center gap-3">
-            <div className="w-20 h-20 bg-gray-700 rounded-lg flex items-center justify-center text-2xl font-bold text-gray-400">
-              {i + 1}
+    <div className="preparation-container">
+      {STEPS.map((step, i) => (
+        <React.Fragment key={i}>
+          {i > 0 && <div className="step-arrow">▶</div>}
+          <div className="step-section">
+            <div className="placeholder-image">
+              <img src={step.img} alt={step.label} className="step-image" />
             </div>
-            <p className="text-sm text-center text-gray-300 whitespace-pre">{step.label}</p>
+            <div className="step-text">{step.label}</div>
           </div>
-        ))}
-      </div>
-      <p className="text-gray-400 text-lg">開始まで {countdown} 秒</p>
+        </React.Fragment>
+      ))}
+      <div className="timer-display">開始まで {countdown} 秒</div>
     </div>
   )
 }
