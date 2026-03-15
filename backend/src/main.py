@@ -48,6 +48,8 @@ async def ws_session(websocket: WebSocket):
             message = await websocket.receive()
             if message["type"] == "websocket.disconnect":
                 break
+            if message.get("bytes") is not None:
+                await manager.send_audio_chunk(message["bytes"])
     except WebSocketDisconnect:
         pass
     finally:

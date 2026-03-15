@@ -31,3 +31,15 @@ def test_ws_session_sends_ready_event(mock_manager):
 
     assert message["type"] == "session_ready"
     mock_manager.connect.assert_awaited_once()
+
+
+def test_ws_binary_audio_calls_send_audio_chunk(mock_manager):
+    with patch("src.main.LiveSessionManager", return_value=mock_manager):
+        from src.main import app
+
+        client = TestClient(app)
+        with client.websocket_connect("/ws/session") as ws:
+            ws.receive_json()
+            ws.send_bytes(b"\x00\x01" * 100)
+
+    mock_manager.send_audio_chunk.assert_awaited()
