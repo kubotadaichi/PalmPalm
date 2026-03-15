@@ -27,8 +27,7 @@ function Preparation() {
       {/* 1分割目 */}
       <div className="step-section">
         <div className="placeholder-image">
-          {/* ここに模擬の手にユーザーの手をのせた画像を挿入します */}
-          <span>画像エリア 1</span>
+          <img src="/p2_part1.png" alt="手をのせる" className="step-image" />
         </div>
         <div className="step-text">手をのせる</div>
       </div>
@@ -38,8 +37,7 @@ function Preparation() {
       {/* 2分割目 */}
       <div className="step-section">
         <div className="placeholder-image">
-          {/* ここに深呼吸している画像を挿入します */}
-          <span>画像エリア 2</span>
+          <img src="/p2_part2.png" alt="深呼吸" className="step-image" />
         </div>
         <div className="step-text">深呼吸</div>
       </div>
@@ -49,8 +47,7 @@ function Preparation() {
       {/* 3分割目 */}
       <div className="step-section">
         <div className="placeholder-image">
-          {/* ここに自動でスタートする画像を挿入します */}
-          <span>画像エリア 3</span>
+          <img src="/p2_part3.png" alt="５秒後開始" className="step-image" />
         </div>
         <div className="step-text">５秒後開始</div>
       </div>

@@ -11,13 +11,12 @@ function Home() {
 
   return (
     <div className="home-container">
-      <h1 className="title">ぱむぱむ~AI手相占い</h1>
-      
+      <h1 className="title">ぱむぱむ<br /><span style={{ fontSize: '0.6em' }}>~AI手相占い~</span></h1>
+
       <div className="image-container">
-        {/* 後で本物の画像に差し替えます */}
-        <img 
-          src="https://placehold.jp/300x300.png?text=PamPam" 
-          alt="ぱむぱむ" 
+        <img
+          src="/p1_center.png"
+          alt="ぱむぱむ"
           className="main-image"
         />
       </div>

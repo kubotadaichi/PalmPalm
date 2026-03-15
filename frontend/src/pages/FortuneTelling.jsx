@@ -34,9 +34,8 @@ function FortuneTelling() {
       <div className="main-character-area">
         {/* 画像コンテナ */}
         <div className="image-container talking-image">
-          {/* 1ページ目と同じぱむぱむの画像（後で本物に差し替え） */}
           <img
-            src="https://placehold.jp/300x300.png?text=PamPam"
+            src="/p3_listen.jpg"
             alt="ぱむぱむ"
             className="main-image"
           />
