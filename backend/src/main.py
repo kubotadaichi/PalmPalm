@@ -2,6 +2,7 @@
 import asyncio
 import json
 import socket as _socket
+import traceback
 
 from dotenv import load_dotenv
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
@@ -38,7 +39,10 @@ async def health():
 
 @app.websocket("/ws/session")
 async def ws_session(websocket: WebSocket):
+    binary_frame_count = 0
+    text_frame_count = 0
     await websocket.accept()
+    print("[WebSocket] accepted /ws/session", flush=True)
     manager = LiveSessionManager()
     await manager.connect()
     await websocket.send_json({"type": "session_ready"})
@@ -50,16 +54,32 @@ async def ws_session(websocket: WebSocket):
             if message["type"] == "websocket.disconnect":
                 break
             if message.get("bytes") is not None:
+                binary_frame_count += 1
+                print(
+                    f"[WebSocket] received binary_frame count={binary_frame_count} "
+                    f"bytes={len(message['bytes'])}",
+                    flush=True,
+                )
                 await manager.send_audio_chunk(message["bytes"])
             if message.get("text") is not None:
+                text_frame_count += 1
                 payload = json.loads(message["text"])
+                print(
+                    f"[WebSocket] received text_frame count={text_frame_count} "
+                    f"type={payload.get('type')}",
+                    flush=True,
+                )
                 if payload.get("type") == "input_audio_end":
                     await manager.flush_input_audio()
                 if payload.get("type") == "session_end":
                     break
     except WebSocketDisconnect:
-        pass
+        print("[WebSocket] disconnected by client", flush=True)
+    except Exception:
+        print("[WebSocket] exception\n" + traceback.format_exc(), flush=True)
+        raise
     finally:
+        print("[WebSocket] closing session", flush=True)
         receive_task.cancel()
         try:
             await receive_task
