@@ -89,13 +89,21 @@ class LiveSessionManager:
             self._ctx = None
             self._session = None
 
-    async def send_audio(self, pcm_bytes: bytes) -> None:
-        """PCM 16kHz mono int16 を Live API へ送信。"""
+    async def send_audio_chunk(self, pcm_bytes: bytes) -> None:
+        """PCM 16kHz mono int16 の 1 chunk を Live API へ送信。"""
         self._ai_speak_start = None
         await self._session.send_realtime_input(
             audio=types.Blob(data=pcm_bytes, mime_type="audio/pcm;rate=16000")
         )
+
+    async def flush_input_audio(self) -> None:
+        """入力音声の一区切りを Live API へ通知する。"""
         await self._session.send_realtime_input(audio_stream_end=True)
+
+    async def send_audio(self, pcm_bytes: bytes) -> None:
+        """互換用: PCM を 1 回送って flush する。"""
+        await self.send_audio_chunk(pcm_bytes)
+        await self.flush_input_audio()
 
     async def receive(self) -> AsyncGenerator[dict, None]:
         """

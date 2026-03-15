@@ -165,3 +165,25 @@ async def test_send_audio_flushes_audio_stream_end(manager):
     assert fake_session.send_realtime_input.await_count == 2
     _, last_kwargs = fake_session.send_realtime_input.await_args_list[-1]
     assert last_kwargs == {"audio_stream_end": True}
+
+
+@pytest.mark.asyncio
+async def test_send_audio_chunk_sends_single_pcm_chunk(manager):
+    fake_session = make_fake_session([])
+    manager._session = fake_session
+
+    await manager.send_audio_chunk(b"\x01\x02" * 100)
+
+    fake_session.send_realtime_input.assert_awaited_once()
+    _, kwargs = fake_session.send_realtime_input.await_args
+    assert kwargs["audio"].mime_type == "audio/pcm;rate=16000"
+
+
+@pytest.mark.asyncio
+async def test_flush_input_audio_sends_audio_stream_end(manager):
+    fake_session = make_fake_session([])
+    manager._session = fake_session
+
+    await manager.flush_input_audio()
+
+    fake_session.send_realtime_input.assert_awaited_once_with(audio_stream_end=True)
