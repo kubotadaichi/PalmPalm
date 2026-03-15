@@ -39,27 +39,32 @@ async def health():
 
 @app.websocket("/ws/session")
 async def ws_session(websocket: WebSocket):
-    binary_frame_count = 0
     text_frame_count = 0
+    stats = {
+        "binary_frame_count": 0,
+        "forwarded_audio_chunk_count": 0,
+        "turn_complete_count": 0,
+    }
     await websocket.accept()
     print("[WebSocket] accepted /ws/session", flush=True)
     manager = LiveSessionManager()
     await manager.connect()
     await websocket.send_json({"type": "session_ready"})
 
-    receive_task = asyncio.create_task(_forward_live_events(websocket, manager))
+    receive_task = asyncio.create_task(_forward_live_events(websocket, manager, stats))
     try:
         while True:
             message = await websocket.receive()
             if message["type"] == "websocket.disconnect":
                 break
             if message.get("bytes") is not None:
-                binary_frame_count += 1
-                print(
-                    f"[WebSocket] received binary_frame count={binary_frame_count} "
-                    f"bytes={len(message['bytes'])}",
-                    flush=True,
-                )
+                stats["binary_frame_count"] += 1
+                if stats["binary_frame_count"] % 200 == 0:
+                    print(
+                        f"[WebSocket] received binary_frame count={stats['binary_frame_count']} "
+                        f"bytes={len(message['bytes'])}",
+                        flush=True,
+                    )
                 await manager.send_audio_chunk(message["bytes"])
             if message.get("text") is not None:
                 text_frame_count += 1
@@ -90,9 +95,32 @@ async def ws_session(websocket: WebSocket):
         await manager.disconnect()
 
 
-async def _forward_live_events(websocket: WebSocket, manager: LiveSessionManager):
+async def _forward_live_events(websocket: WebSocket, manager: LiveSessionManager, stats: dict):
     try:
         async for event in manager.receive():
+            event_type = event.get("type")
+            if event_type == "audio_chunk":
+                stats["forwarded_audio_chunk_count"] += 1
+                count = stats["forwarded_audio_chunk_count"]
+                if count == 1 or count % 50 == 0:
+                    print(
+                        "[forward_live_events] forwarded audio_chunk "
+                        f"count={count} binary_frames={stats['binary_frame_count']}",
+                        flush=True,
+                    )
+            elif event_type == "turn_complete":
+                stats["turn_complete_count"] += 1
+                print(
+                    "[forward_live_events] forwarded turn_complete "
+                    f"count={stats['turn_complete_count']} "
+                    f"binary_frames={stats['binary_frame_count']} "
+                    f"audio_chunks={stats['forwarded_audio_chunk_count']}",
+                    flush=True,
+                )
             await websocket.send_json(event)
     except Exception:
         print("[forward_live_events] exception\n" + traceback.format_exc(), flush=True)
+        try:
+            await websocket.send_json({"type": "error", "message": "セッションエラーが発生しました"})
+        except Exception:
+            pass

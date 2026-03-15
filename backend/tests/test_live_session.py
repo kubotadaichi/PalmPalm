@@ -1,10 +1,11 @@
 """LiveSessionManager のユニットテスト（Gemini API はモック）。"""
+import asyncio
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 from google.genai import types
 
-from src.live_session import LiveSessionManager
+from src.live_session import LiveSessionManager, SYSTEM_INSTRUCTION
 
 
 class FakeToolCall:
@@ -22,11 +23,18 @@ class FakeToolCallWrapper:
 
 
 class FakeServerContent:
-    def __init__(self, audio_data=None, turn_complete=False, generation_complete=False):
+    def __init__(
+        self,
+        audio_data=None,
+        turn_complete=False,
+        generation_complete=False,
+        turn_complete_reason=None,
+    ):
         self.parts = [MagicMock(inline_data=MagicMock(data=audio_data))] if audio_data else []
         self.model_turn = MagicMock(parts=self.parts) if audio_data else None
         self.turn_complete = turn_complete
         self.generation_complete = generation_complete
+        self.turn_complete_reason = turn_complete_reason
 
 
 class FakeResponse:
@@ -36,10 +44,16 @@ class FakeResponse:
         tool_call=None,
         turn_complete=False,
         generation_complete=False,
+        turn_complete_reason=None,
     ):
         self.data = audio_data
         self.tool_call = FakeToolCallWrapper(tool_call) if tool_call else None
-        self.server_content = FakeServerContent(audio_data, turn_complete, generation_complete)
+        self.server_content = FakeServerContent(
+            audio_data,
+            turn_complete,
+            generation_complete,
+            turn_complete_reason,
+        )
 
 
 def make_fake_session(responses):
@@ -152,6 +166,58 @@ async def test_receive_treats_generation_complete_as_turn_complete(manager):
         events.append(event)
 
     assert any(event["type"] == "turn_complete" for event in events)
+
+
+@pytest.mark.asyncio
+async def test_receive_suppresses_duplicate_turn_complete_in_single_turn(manager):
+    fake_session = make_fake_session(
+        [
+            FakeResponse(generation_complete=True, turn_complete_reason="done"),
+            FakeResponse(turn_complete=True, turn_complete_reason="done"),
+        ]
+    )
+    manager._session = fake_session
+
+    receive_iter = manager.receive()
+    first_event = await anext(receive_iter)
+    with pytest.raises(asyncio.TimeoutError):
+        await asyncio.wait_for(anext(receive_iter), timeout=0.01)
+    await receive_iter.aclose()
+
+    assert first_event == {"type": "turn_complete"}
+
+
+@pytest.mark.asyncio
+async def test_receive_logs_turn_complete_without_audio(manager, capsys):
+    fake_session = make_fake_session([FakeResponse(generation_complete=True)])
+    manager._session = fake_session
+
+    events = []
+    receive_iter = manager.receive()
+    events.append(await anext(receive_iter))
+    await receive_iter.aclose()
+
+    captured = capsys.readouterr()
+    assert events == [{"type": "turn_complete"}]
+    assert "turn completed without audio" in captured.out
+
+
+@pytest.mark.asyncio
+async def test_receive_logs_all_response_shapes_for_silent_turn(manager, capsys):
+    first = FakeResponse()
+    first.server_content.input_transcription = MagicMock(text="仕事")
+    second = FakeResponse(generation_complete=True)
+    fake_session = make_fake_session([first, second])
+    manager._session = fake_session
+
+    receive_iter = manager.receive()
+    assert await anext(receive_iter) == {"type": "turn_complete"}
+    await receive_iter.aclose()
+
+    captured = capsys.readouterr()
+    assert "responses=[" in captured.out
+    assert "#1" in captured.out
+    assert "#2" in captured.out
 
 
 @pytest.mark.asyncio
@@ -272,6 +338,7 @@ async def test_connect_configures_server_side_vad():
     config = kwargs["config"]
     realtime_input_config = config.realtime_input_config
 
+    assert kwargs["model"] == "gemini-2.5-flash-native-audio-preview-09-2025"
     assert realtime_input_config is not None
     assert (
         realtime_input_config.activity_handling
@@ -284,3 +351,9 @@ async def test_connect_configures_server_side_vad():
 
     # automatic_activity_detection は設定しない → Gemini Live API の自動 VAD を有効にする
     assert realtime_input_config.automatic_activity_detection is None
+
+
+def test_system_instruction_uses_assertive_palm_reading():
+    assert "断言を避け" not in SYSTEM_INSTRUCTION
+    assert "各線がはっきり見えている前提で断言口調で語る" in SYSTEM_INSTRUCTION
+    assert "感情線は" in SYSTEM_INSTRUCTION

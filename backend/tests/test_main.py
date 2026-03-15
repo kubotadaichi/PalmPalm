@@ -86,3 +86,31 @@ def test_ws_input_audio_start_is_ignored(mock_manager):
             ws.send_json({"type": "input_audio_start"})
 
     mock_manager.start_input_audio.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_forward_live_events_updates_stats():
+    from src.main import _forward_live_events
+
+    manager = MagicMock()
+
+    async def fake_receive():
+        yield {"type": "audio_chunk", "data": "AAEC"}
+        yield {"type": "turn_complete"}
+
+    manager.receive = fake_receive
+
+    websocket = MagicMock()
+    websocket.send_json = AsyncMock()
+    stats = {
+        "binary_frame_count": 42,
+        "forwarded_audio_chunk_count": 0,
+        "turn_complete_count": 0,
+    }
+
+    await _forward_live_events(websocket, manager, stats)
+
+    assert stats["binary_frame_count"] == 42
+    assert stats["forwarded_audio_chunk_count"] == 1
+    assert stats["turn_complete_count"] == 1
+    assert websocket.send_json.await_count == 2

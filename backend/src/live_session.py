@@ -15,7 +15,7 @@ import httpx
 from google import genai
 from google.genai import types
 
-MODEL = "gemini-2.5-flash-native-audio-preview-12-2025"
+MODEL = "gemini-2.5-flash-native-audio-preview-09-2025"
 AGITATION_API_URL = os.getenv("AGITATION_API_URL", "")
 
 SYSTEM_INSTRUCTION = """\
@@ -23,8 +23,15 @@ SYSTEM_INSTRUCTION = """\
 
 【基本姿勢】
 手の感情線・運命線・頭脳線・生命線を具体的に言及しながら語る。
-断言は避け「〜ではないですか」「〜が見えます」という仮説として語る。
+各線がはっきり見えている前提で断言口調で語る。
+感情線は、運命線は、頭脳線は、生命線は、のように言い切ってよい。
+今回は実際に画像を見ていなくても、手相が見えている占い師として自然に断言する。
 神秘的かつ低いトーンで、2〜3文で語る。
+
+【最初の一言（セッション開始時のみ）】
+占いを始める前に、何を占って欲しいかを聞く。
+例を2〜3個挙げること。例：「仕事運・恋愛・人間関係など、何について手相を読みましょうか？」
+例示は必ず含めること。
 
 【get_agitation ツールの使い方（最重要）】
 - 毎ターン必ず1回呼び出すこと
@@ -92,7 +99,7 @@ class LiveSessionManager:
         self._session = await self._ctx.__aenter__()
         # 初手: AI が先に話し始めるよう促す
         await self._session.send_client_content(
-            turns={"role": "user", "parts": [{"text": "占いを始めてください。"}]},
+            turns={"role": "user", "parts": [{"text": "占いを始めてください。最初に、何を占って欲しいか例を挙げて聞いてください。"}]},
             turn_complete=True,
         )
         print(f"[LiveSession] sent initial greeting prompt ts={time.time():.3f}", flush=True)
@@ -113,11 +120,12 @@ class LiveSessionManager:
         """PCM 16kHz mono int16 の 1 chunk を Live API へ送信。"""
         self._ai_speak_start = None
         self._sent_audio_chunks += 1
-        print(
-            f"[LiveSession] send_audio_chunk count={self._sent_audio_chunks} "
-            f"bytes={len(pcm_bytes)} ts={time.time():.3f}",
-            flush=True,
-        )
+        if len(pcm_bytes) % 200 == 0:
+            print(
+                f"[LiveSession] send_audio_chunk count={self._sent_audio_chunks} "
+                f"bytes={len(pcm_bytes)} ts={time.time():.3f}",
+                flush=True,
+            )
         await self._session.send_realtime_input(
             audio=types.Blob(data=pcm_bytes, mime_type="audio/pcm;rate=16000")
         )
@@ -147,8 +155,14 @@ class LiveSessionManager:
         """
         while self._session is not None:
             got_response = False
+            turn_audio_chunk_count = 0
+            turn_complete_emitted = False
+            turn_response_shapes: list[str] = []
             async for response in self._session.receive():  # type: ignore[attr-defined]
                 got_response = True
+                turn_response_shapes.append(
+                    f"#{len(turn_response_shapes) + 1} {self._describe_response(response)}"
+                )
                 server_content = getattr(response, "server_content", None)
                 should_emit_turn_complete = False
                 input_transcription = getattr(server_content, "input_transcription", None)
@@ -187,14 +201,16 @@ class LiveSessionManager:
                         )
                 audio_data = self._extract_audio_data(response)
                 if audio_data:
+                    turn_audio_chunk_count += 1
                     if self._ai_speak_start is None:
                         self._ai_speak_start = time.time()
                     self._received_audio_chunks += 1
-                    print(
-                        f"[LiveSession] receive_audio_chunk count={self._received_audio_chunks} "
-                        f"bytes={len(audio_data)} ts={time.time():.3f}",
-                        flush=True,
-                    )
+                    if self._received_audio_chunks % 200 == 0:
+                        print(
+                            f"[LiveSession] receive_audio_chunk count={self._received_audio_chunks} "
+                            f"bytes={len(audio_data)} ts={time.time():.3f}",
+                            flush=True,
+                        )
                     yield {
                         "type": "audio_chunk",
                         "data": base64.b64encode(audio_data).decode(),
@@ -214,11 +230,27 @@ class LiveSessionManager:
                     should_emit_turn_complete = True
 
                 if should_emit_turn_complete:
+                    if turn_complete_emitted:
+                        print(
+                            "[LiveSession] duplicate turn_complete suppressed "
+                            f"shape={self._describe_response(response)} ts={time.time():.3f}",
+                            flush=True,
+                        )
+                        continue
+                    if turn_audio_chunk_count == 0:
+                        print(
+                            "[LiveSession] turn completed without audio "
+                            f"shape={self._describe_response(response)} "
+                            f"responses=[{' | '.join(turn_response_shapes)}] "
+                            f"ts={time.time():.3f}",
+                            flush=True,
+                        )
                     print(
                         f"[LiveSession] receive_turn_complete ts={time.time():.3f}",
                         flush=True,
                     )
                     yield {"type": "turn_complete"}
+                    turn_complete_emitted = True
                     self._ai_speak_start = None
 
             if not got_response:
@@ -245,20 +277,49 @@ class LiveSessionManager:
                 return data
         return None
 
+    def _describe_response(self, response) -> str:
+        """観測用: Live API response の shape を短く要約する。"""
+        server_content = getattr(response, "server_content", None)
+        model_turn = getattr(server_content, "model_turn", None)
+        parts = getattr(model_turn, "parts", None) or []
+        inline_audio_parts = 0
+        for part in parts:
+            inline_data = getattr(part, "inline_data", None)
+            if getattr(inline_data, "data", None):
+                inline_audio_parts += 1
+
+        tool_call = getattr(response, "tool_call", None)
+        function_calls = getattr(tool_call, "function_calls", None) or []
+
+        return (
+            f"has_data={bool(getattr(response, 'data', None))} "
+            f"parts={len(parts)} inline_audio_parts={inline_audio_parts} "
+            f"tool_calls={len(function_calls)} "
+            f"input_text={getattr(getattr(server_content, 'input_transcription', None), 'text', None)!r} "
+            f"generation_complete={bool(getattr(server_content, 'generation_complete', None))} "
+            f"turn_complete={bool(getattr(server_content, 'turn_complete', None))} "
+            f"interrupted={bool(getattr(server_content, 'interrupted', None))} "
+            f"waiting_for_input={getattr(server_content, 'waiting_for_input', None)} "
+            f"turn_complete_reason={getattr(server_content, 'turn_complete_reason', None)!r}"
+        )
+
     async def _handle_tool_call(self, call) -> None:
         """get_agitation tool call を処理してラズパイに問い合わせ、結果を返す。"""
         from_ts = self._ai_speak_start if self._ai_speak_start else time.time() - 3.0
         to_ts = time.time()
         snap = await self._fetch_agitation_window(from_ts, to_ts)
-        await self._session.send_tool_response(
-            function_responses=[
-                types.FunctionResponse(
-                    id=call.id,
-                    name=call.name,
-                    response=snap,
-                )
-            ]
-        )
+        try:
+            await self._session.send_tool_response(
+                function_responses=[
+                    types.FunctionResponse(
+                        id=call.id,
+                        name=call.name,
+                        response=snap,
+                    )
+                ]
+            )
+        except Exception as exc:
+            print(f"[LiveSession] send_tool_response error: {exc}", flush=True)
 
     async def _fetch_agitation_window(self, from_ts: float, to_ts: float) -> dict:
         """ラズパイの /agitation/window を HTTP 呼び出し。失敗時はデフォルト値を返す。"""

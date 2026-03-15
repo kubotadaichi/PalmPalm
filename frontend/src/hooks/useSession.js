@@ -17,7 +17,8 @@ function toWebSocketUrl(baseUrl) {
 }
 
 export function useSession({ enabled = false } = {}) {
-  const [turn, setTurn] = useState('user')
+  // 'ai' から始めることで、初回 AI 挨拶が終わるまで音声送信を抑制する
+  const [turn, setTurn] = useState('ai')
   const [vadError, setVadError] = useState(null)
   const [sessionReady, setSessionReady] = useState(false)
 
@@ -30,6 +31,10 @@ export function useSession({ enabled = false } = {}) {
   const enabledRef = useRef(enabled)
   const moduleLoadedRef = useRef(false)
   const sessionReadyRef = useRef(sessionReady)
+  const aiTurnTimeoutRef = useRef(null)
+  const turnRef = useRef('ai')
+  const sentPcmChunksRef = useRef(0)
+  const receivedAudioChunksRef = useRef(0)
 
   useEffect(() => {
     enabledRef.current = enabled
@@ -38,6 +43,23 @@ export function useSession({ enabled = false } = {}) {
   useEffect(() => {
     sessionReadyRef.current = sessionReady
   }, [sessionReady])
+
+  useEffect(() => {
+    turnRef.current = turn
+  }, [turn])
+
+  const setTurnWithReason = useCallback((nextTurn, reason, extra = '') => {
+    setTurn((prevTurn) => {
+      const suffix = extra ? ` ${extra}` : ''
+      if (prevTurn !== nextTurn) {
+        console.log(`[useSession] turn ${prevTurn} -> ${nextTurn} reason=${reason}${suffix}`)
+      } else {
+        console.log(`[useSession] turn ${nextTurn} unchanged reason=${reason}${suffix}`)
+      }
+      turnRef.current = nextTurn
+      return nextTurn
+    })
+  }, [])
 
   const playAudioChunk = useCallback(async (base64Data) => {
     if (!audioCtxRef.current || audioCtxRef.current.state === 'closed') {
@@ -104,11 +126,20 @@ export function useSession({ enabled = false } = {}) {
       const worklet = new AudioWorkletNode(captureCtx, 'pcm-processor')
       workletNodeRef.current = worklet
 
-      // PCM を常時送信。ターン管理は Gemini Live API の自動 VAD に委ねる
+      // AI ターン中は送信しない: START_OF_ACTIVITY_INTERRUPTS で AI 発話が中断されるのを防ぐ
       worklet.port.onmessage = (event) => {
         const socket = socketRef.current
-        if (!enabledRef.current || !sessionReadyRef.current || socket?.readyState !== WebSocket.OPEN) {
+        if (
+          !enabledRef.current ||
+          !sessionReadyRef.current ||
+          socket?.readyState !== WebSocket.OPEN ||
+          turnRef.current !== 'user'
+        ) {
           return
+        }
+        sentPcmChunksRef.current += 1
+        if (sentPcmChunksRef.current === 1 || sentPcmChunksRef.current % 200 === 0) {
+          console.log(`[useSession] sent pcm count=${sentPcmChunksRef.current} turn=${turnRef.current}`)
         }
         socket.send(event.data)
       }
@@ -129,27 +160,50 @@ export function useSession({ enabled = false } = {}) {
       try {
         const message = JSON.parse(event.data)
         if (message.type === 'session_ready') {
+          sentPcmChunksRef.current = 0
+          receivedAudioChunksRef.current = 0
           setSessionReady(true)
           console.log('[useSession] session ready')
           return
         }
         if (message.type === 'audio_chunk') {
-          console.log('[useSession] received audio_chunk')
-          setTurn('ai')
+          receivedAudioChunksRef.current += 1
+          console.log(
+            `[useSession] received audio_chunk count=${receivedAudioChunksRef.current} turn=${turnRef.current}`,
+          )
+          setTurnWithReason('ai', 'audio_chunk', `audioChunkCount=${receivedAudioChunksRef.current}`)
+          // AIが喋り始めたら30秒タイムアウトをセット
+          if (aiTurnTimeoutRef.current) clearTimeout(aiTurnTimeoutRef.current)
+          aiTurnTimeoutRef.current = setTimeout(() => {
+            console.warn('[useSession] AI turn timeout, forcing user turn')
+            setTurnWithReason('user', 'ai_timeout')
+            aiTurnTimeoutRef.current = null
+          }, 30000)
           void playAudioChunk(message.data)
           return
         }
         if (message.type === 'turn_complete') {
           console.log('[useSession] received turn_complete')
+          if (aiTurnTimeoutRef.current) {
+            clearTimeout(aiTurnTimeoutRef.current)
+            aiTurnTimeoutRef.current = null
+          }
           const audioCtx = audioCtxRef.current
           const remaining = audioCtx ? nextPlayTimeRef.current - audioCtx.currentTime : 0
-          setTimeout(() => setTurn('user'), Math.max(0, remaining * 1000))
+          setTimeout(
+            () => setTurnWithReason('user', 'turn_complete', `remainingMs=${Math.max(0, remaining * 1000).toFixed(0)}`),
+            Math.max(0, remaining * 1000),
+          )
           return
         }
         if (message.type === 'error') {
           console.log('[useSession] received error', message)
+          if (aiTurnTimeoutRef.current) {
+            clearTimeout(aiTurnTimeoutRef.current)
+            aiTurnTimeoutRef.current = null
+          }
           setVadError(message.message ?? 'セッションエラー')
-          setTurn('user')
+          setTurnWithReason('user', 'error')
         }
       } catch {
         // ignore non-JSON frames
@@ -165,7 +219,7 @@ export function useSession({ enabled = false } = {}) {
       setSessionReady(false)
     }
     socketRef.current = socket
-  }, [playAudioChunk])
+  }, [playAudioChunk, setTurnWithReason])
 
   const stopSession = useCallback(() => {
     setSessionReady(false)
@@ -184,12 +238,12 @@ export function useSession({ enabled = false } = {}) {
       stopSession()
       setVadError(null)
       setSessionReady(false)
-      setTurn('user')
+      setTurnWithReason('ai', 'disabled')
       return
     }
 
     startSession()
-  }, [enabled, startSession, stopRecording, stopSession])
+  }, [enabled, setTurnWithReason, startSession, stopRecording, stopSession])
 
   // session_ready になったら録音開始し、以後ずっと送信し続ける
   useEffect(() => {
