@@ -187,3 +187,24 @@ async def test_flush_input_audio_sends_audio_stream_end(manager):
     await manager.flush_input_audio()
 
     fake_session.send_realtime_input.assert_awaited_once_with(audio_stream_end=True)
+
+
+@pytest.mark.asyncio
+async def test_receive_yields_multiple_audio_chunks_in_order(manager):
+    pcm1 = b"\x00\x01" * 10
+    pcm2 = b"\x02\x03" * 10
+    fake_session = make_fake_session(
+        [
+            FakeResponse(audio_data=pcm1),
+            FakeResponse(audio_data=pcm2),
+            FakeResponse(turn_complete=True),
+        ]
+    )
+    manager._session = fake_session
+
+    events = []
+    async for event in manager.receive():
+        events.append(event)
+
+    audio_events = [event for event in events if event["type"] == "audio_chunk"]
+    assert len(audio_events) == 2
