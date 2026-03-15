@@ -23,6 +23,7 @@ class FakeToolCallWrapper:
 class FakeServerContent:
     def __init__(self, audio_data=None, turn_complete=False):
         self.parts = [MagicMock(inline_data=MagicMock(data=audio_data))] if audio_data else []
+        self.model_turn = MagicMock(parts=self.parts) if audio_data else None
         self.turn_complete = turn_complete
 
 
@@ -69,6 +70,26 @@ async def test_receive_yields_audio_chunk(manager):
 
     assert any(event["type"] == "audio_chunk" for event in events)
     assert any(event["type"] == "turn_complete" for event in events)
+
+
+@pytest.mark.asyncio
+async def test_receive_yields_audio_chunk_from_model_turn_parts(manager):
+    """response.data が空でも model_turn.parts.inline_data から audio_chunk を取り出す。"""
+    pcm = b"\x00\x01" * 100
+    responses = [
+        FakeResponse(audio_data=None),
+        FakeResponse(turn_complete=True),
+    ]
+    responses[0].server_content = FakeServerContent(audio_data=pcm)
+    responses[0].data = None
+    fake_session = make_fake_session(responses)
+    manager._session = fake_session
+
+    events = []
+    async for event in manager.receive():
+        events.append(event)
+
+    assert any(event["type"] == "audio_chunk" for event in events)
 
 
 @pytest.mark.asyncio

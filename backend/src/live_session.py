@@ -104,12 +104,13 @@ class LiveSessionManager:
           {"type": "turn_complete"}
         """
         async for response in self._session.receive():
-            if response.data:
+            audio_data = self._extract_audio_data(response)
+            if audio_data:
                 if self._ai_speak_start is None:
                     self._ai_speak_start = time.time()
                 yield {
                     "type": "audio_chunk",
-                    "data": base64.b64encode(response.data).decode(),
+                    "data": base64.b64encode(audio_data).decode(),
                 }
 
             if response.tool_call:
@@ -119,6 +120,21 @@ class LiveSessionManager:
             if response.server_content and response.server_content.turn_complete:
                 yield {"type": "turn_complete"}
                 self._ai_speak_start = None
+
+    def _extract_audio_data(self, response) -> bytes | None:
+        """Live API レスポンスから音声バイト列を取り出す。"""
+        if getattr(response, "data", None):
+            return response.data
+
+        server_content = getattr(response, "server_content", None)
+        model_turn = getattr(server_content, "model_turn", None)
+        parts = getattr(model_turn, "parts", None) or []
+        for part in parts:
+            inline_data = getattr(part, "inline_data", None)
+            data = getattr(inline_data, "data", None)
+            if data:
+                return data
+        return None
 
     async def _handle_tool_call(self, call) -> None:
         """get_agitation tool call を処理してラズパイに問い合わせ、結果を返す。"""
