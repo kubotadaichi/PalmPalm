@@ -2,8 +2,6 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 
 const BACKEND_URL = import.meta.env.VITE_BACKEND_URL || ''
 const MAX_RECORD_SECONDS = 10
-const SILENCE_THRESHOLD = 0.015
-const SILENCE_MS = 800
 
 function toWebSocketUrl(baseUrl) {
   if (!baseUrl) {
@@ -33,12 +31,10 @@ export function useSession({ enabled = false } = {}) {
   const nextPlayTimeRef = useRef(0)
   const countdownRef = useRef(null)
   const stopTimerRef = useRef(null)
-  const silenceTimerRef = useRef(null)
   const enabledRef = useRef(enabled)
   const moduleLoadedRef = useRef(false)
   const turnRef = useRef(turn)
   const sessionReadyRef = useRef(sessionReady)
-  const speechActiveRef = useRef(false)
 
   useEffect(() => {
     enabledRef.current = enabled
@@ -60,10 +56,6 @@ export function useSession({ enabled = false } = {}) {
     if (stopTimerRef.current) {
       clearTimeout(stopTimerRef.current)
       stopTimerRef.current = null
-    }
-    if (silenceTimerRef.current) {
-      clearTimeout(silenceTimerRef.current)
-      silenceTimerRef.current = null
     }
   }, [])
 
@@ -106,12 +98,6 @@ export function useSession({ enabled = false } = {}) {
       worklet.disconnect()
       workletNodeRef.current = null
     }
-
-    const socket = socketRef.current
-    if (socket?.readyState === WebSocket.OPEN) {
-      socket.send(JSON.stringify({ type: 'input_audio_end' }))
-    }
-    speechActiveRef.current = false
   }, [clearTimers])
 
   const startRecording = useCallback(async () => {
@@ -151,37 +137,7 @@ export function useSession({ enabled = false } = {}) {
         ) {
           return
         }
-
-        let sumSquares = 0
-        for (let i = 0; i < pcm.length; i++) {
-          const sample = pcm[i] / 32768
-          sumSquares += sample * sample
-        }
-        const rms = Math.sqrt(sumSquares / pcm.length)
-
-        if (rms >= SILENCE_THRESHOLD) {
-          speechActiveRef.current = true
-          if (silenceTimerRef.current) {
-            clearTimeout(silenceTimerRef.current)
-            silenceTimerRef.current = null
-          }
-          socket.send(event.data)
-          return
-        }
-
-        if (!speechActiveRef.current) {
-          return
-        }
-
         socket.send(event.data)
-        if (!silenceTimerRef.current) {
-          silenceTimerRef.current = setTimeout(() => {
-            silenceTimerRef.current = null
-            speechActiveRef.current = false
-            setTurn('ai')
-            stopRecording()
-          }, SILENCE_MS)
-        }
       }
 
       source.connect(worklet)
