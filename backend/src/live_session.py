@@ -5,6 +5,7 @@ Gemini Live API を使った占いセッション管理。
 """
 from __future__ import annotations
 
+import asyncio
 import base64
 import os
 import time
@@ -142,8 +143,9 @@ class LiveSessionManager:
 
         google-genai SDK の session.receive() は 1 ターン分で終了するため、
         while True でターンをまたいで再呼び出しする。
+        セッションが生きている限りループを継続し、空応答では break しない。
         """
-        while True:
+        while self._session is not None:
             got_response = False
             async for response in self._session.receive():  # type: ignore[attr-defined]
                 got_response = True
@@ -220,11 +222,13 @@ class LiveSessionManager:
                     self._ai_speak_start = None
 
             if not got_response:
+                # session.receive() が空で返った = 入力待ち or セッション終了
+                # セッションが切れていなければ継続してターンを待つ
                 print(
-                    f"[LiveSession] receive got no response, session may have ended ts={time.time():.3f}",
+                    f"[LiveSession] receive returned empty (waiting for input) ts={time.time():.3f}",
                     flush=True,
                 )
-                break
+                await asyncio.sleep(0.05)
 
     def _extract_audio_data(self, response) -> bytes | None:
         """Live API レスポンスから音声バイト列を取り出す。"""
