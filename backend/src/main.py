@@ -64,15 +64,17 @@ async def ws_session(websocket: WebSocket):
             if message.get("text") is not None:
                 text_frame_count += 1
                 payload = json.loads(message["text"])
+                message_type = payload.get("type")
                 print(
                     f"[WebSocket] received text_frame count={text_frame_count} "
-                    f"type={payload.get('type')}",
+                    f"type={message_type}",
                     flush=True,
                 )
-                if payload.get("type") == "input_audio_end":
-                    await manager.flush_input_audio()
-                if payload.get("type") == "session_end":
+                if message_type == "session_end":
                     break
+                # Binary audio frames are the primary turn input path.
+                if message_type == "input_audio_end":
+                    await manager.flush_input_audio()
     except WebSocketDisconnect:
         print("[WebSocket] disconnected by client", flush=True)
     except Exception:
