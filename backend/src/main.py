@@ -91,5 +91,8 @@ async def ws_session(websocket: WebSocket):
 
 
 async def _forward_live_events(websocket: WebSocket, manager: LiveSessionManager):
-    async for event in manager.receive():
-        await websocket.send_json(event)
+    try:
+        async for event in manager.receive():
+            await websocket.send_json(event)
+    except Exception:
+        print("[forward_live_events] exception\n" + traceback.format_exc(), flush=True)

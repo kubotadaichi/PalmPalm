@@ -26,7 +26,7 @@ docker compose up --build
 
 ### ② Agitation サーバー（ターミナル1）
 
-振動センサーの動揺スコアを管理するローカルサーバー。
+振動検知の動揺スコアを管理するローカルサーバー。
 
 ```bash
 cd backend
@@ -37,7 +37,7 @@ uv run uvicorn src.agitation_server:app --host 0.0.0.0 --port 8001
 
 ### ③ シリアルリーダー（ターミナル2）
 
-Pico（振動センサー）のシリアル出力を監視し、検知のたびに Agitation サーバーへ通知する。
+Pico のシリアル出力を監視し、検知のたびに Agitation サーバーへ通知する。
 
 ```bash
 # ポートを確認
@@ -64,15 +64,38 @@ uv run python -m src.serial_reader --port /dev/tty.usbmodem1101
 
 ## エンドポイント一覧
 
+### メインサーバー（port 8000）
+
 | エンドポイント | メソッド | 説明 |
 |---|---|---|
 | `/health` | GET | ヘルスチェック |
-| `/api/audio` | POST | ユーザー音声受信 → SSE でステージ1/2返却 |
-| `/audio/*` | GET | TTS 生成済み音声ファイル配信 |
+| `/ws/session` | WebSocket | 占いセッション（PCM ストリーミング） |
+
+### WebSocket メッセージ仕様 (`/ws/session`)
+
+**フロントエンド → バックエンド**
+
+| type / フレーム | 内容 |
+|---|---|
+| binary | PCM 16kHz mono int16 チャンク（マイク入力） |
+| `{"type": "input_audio_end"}` | 発話終了の補助通知 |
+| `{"type": "session_end"}` | セッション終了 |
+
+**バックエンド → フロントエンド**
+
+| type | 内容 |
+|---|---|
+| `session_ready` | セッション確立完了 |
+| `audio_chunk` | AI 音声（base64 PCM 24kHz）|
+| `turn_complete` | AI の発話終了 |
+
+---
 
 ### Agitation サーバー（port 8001）
 
 | エンドポイント | メソッド | 説明 |
 |---|---|---|
+| `/health` | GET | ヘルスチェック |
 | `/pulse` | POST | 振動検知時に呼ぶ |
-| `/agitation` | GET | 動揺スコア取得 |
+| `/agitation` | GET | 動揺スコア取得（現在値） |
+| `/agitation/window?from_ts=X&to_ts=Y` | GET | 指定時間窓の動揺スコア取得 |

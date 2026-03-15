@@ -10,6 +10,7 @@ export default defineConfig({
     proxy: {
       '/api': 'http://backend:8000',
       '/audio': 'http://backend:8000',
+      '/ws': { target: 'ws://backend:8000', ws: true },
     },
     watch: {
       usePolling: true,  // Docker内でのファイル変更検知に必須

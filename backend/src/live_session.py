@@ -29,7 +29,7 @@ SYSTEM_INSTRUCTION = """\
 - 毎ターン必ず1回呼び出すこと
 - 呼び出すタイミングは「感情の核心に近づいた」と感じた瞬間（ターンの中盤〜後半）
 - 呼び出す前に一般的な読みを展開し、結果を見てから核心を突く
-- すぐに「センサーが〜」とは言わない。「体が正直に答えています」程度に留める
+- すぐに「手が反応している」とは言わない。「体が正直に答えています」程度に留める
 
 【出力】
 2〜3文、必ず問いかけで締める。
@@ -38,7 +38,7 @@ SYSTEM_INSTRUCTION = """\
 GET_AGITATION_DECLARATION = types.FunctionDeclaration(
     name="get_agitation",
     description=(
-        "ユーザーの手の振動センサーから身体的動揺度を読み取る。"
+        "ユーザーの手から身体的動揺度を読み取る。"
         "占いの重要なタイミング（感情の核心に触れる直前）で呼び出すこと。"
         "呼び出すタイミング自体が演出の一部。毎ターン1回は必ず呼び出すこと。"
     ),
@@ -89,6 +89,12 @@ class LiveSessionManager:
         )
         self._ctx = self._client.aio.live.connect(model=MODEL, config=config)
         self._session = await self._ctx.__aenter__()
+        # 初手: AI が先に話し始めるよう促す
+        await self._session.send_client_content(
+            turns={"role": "user", "parts": [{"text": "占いを始めてください。"}]},
+            turn_complete=True,
+        )
+        print(f"[LiveSession] sent initial greeting prompt ts={time.time():.3f}", flush=True)
 
     async def disconnect(self) -> None:
         """セッションを終了する。"""
@@ -139,7 +145,7 @@ class LiveSessionManager:
         """
         while True:
             got_response = False
-            async for response in self._session.receive():
+            async for response in self._session.receive():  # type: ignore[attr-defined]
                 got_response = True
                 server_content = getattr(response, "server_content", None)
                 should_emit_turn_complete = False
@@ -214,6 +220,10 @@ class LiveSessionManager:
                     self._ai_speak_start = None
 
             if not got_response:
+                print(
+                    f"[LiveSession] receive got no response, session may have ended ts={time.time():.3f}",
+                    flush=True,
+                )
                 break
 
     def _extract_audio_data(self, response) -> bytes | None:
