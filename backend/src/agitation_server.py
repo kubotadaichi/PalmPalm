@@ -19,6 +19,16 @@ def get_agitation():
     return snap
 
 
+@app.get("/agitation/window")
+def get_agitation_window(from_ts: float, to_ts: float):
+    snap = engine.snapshot_window(from_ts, to_ts)
+    print(
+        f"[Agitation] window({from_ts:.1f},{to_ts:.1f}) → level={snap['level']}%, trend={snap['trend']}",
+        flush=True,
+    )
+    return snap
+
+
 @app.post("/pulse")
 def post_pulse():
     engine.record_pulse()
