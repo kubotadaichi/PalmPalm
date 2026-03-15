@@ -43,3 +43,20 @@ def test_ws_binary_audio_calls_send_audio_chunk(mock_manager):
             ws.send_bytes(b"\x00\x01" * 100)
 
     mock_manager.send_audio_chunk.assert_awaited()
+
+
+def test_ws_forwards_audio_chunk_and_turn_complete(mock_manager):
+    async def fake_receive():
+        yield {"type": "audio_chunk", "data": "AAEC"}
+        yield {"type": "turn_complete"}
+
+    mock_manager.receive = fake_receive
+
+    with patch("src.main.LiveSessionManager", return_value=mock_manager):
+        from src.main import app
+
+        client = TestClient(app)
+        with client.websocket_connect("/ws/session") as ws:
+            assert ws.receive_json()["type"] == "session_ready"
+            assert ws.receive_json()["type"] == "audio_chunk"
+            assert ws.receive_json()["type"] == "turn_complete"
