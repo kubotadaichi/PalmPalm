@@ -1,7 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 
 const BACKEND_URL = import.meta.env.VITE_BACKEND_URL || ''
-const MAX_RECORD_SECONDS = 10
 
 function toWebSocketUrl(baseUrl) {
   if (!baseUrl) {
@@ -20,7 +19,6 @@ function toWebSocketUrl(baseUrl) {
 export function useSession({ enabled = false } = {}) {
   const [turn, setTurn] = useState('user')
   const [vadError, setVadError] = useState(null)
-  const [timeLeft, setTimeLeft] = useState(MAX_RECORD_SECONDS)
   const [sessionReady, setSessionReady] = useState(false)
 
   const socketRef = useRef(null)
@@ -29,8 +27,6 @@ export function useSession({ enabled = false } = {}) {
   const workletNodeRef = useRef(null)
   const streamRef = useRef(null)
   const nextPlayTimeRef = useRef(0)
-  const countdownRef = useRef(null)
-  const stopTimerRef = useRef(null)
   const enabledRef = useRef(enabled)
   const moduleLoadedRef = useRef(false)
   const turnRef = useRef(turn)
@@ -47,17 +43,6 @@ export function useSession({ enabled = false } = {}) {
   useEffect(() => {
     sessionReadyRef.current = sessionReady
   }, [sessionReady])
-
-  const clearTimers = useCallback(() => {
-    if (countdownRef.current) {
-      clearInterval(countdownRef.current)
-      countdownRef.current = null
-    }
-    if (stopTimerRef.current) {
-      clearTimeout(stopTimerRef.current)
-      stopTimerRef.current = null
-    }
-  }, [])
 
   const playAudioChunk = useCallback(async (base64Data) => {
     if (!audioCtxRef.current || audioCtxRef.current.state === 'closed') {
@@ -90,15 +75,12 @@ export function useSession({ enabled = false } = {}) {
   }, [])
 
   const stopRecording = useCallback(() => {
-    clearTimers()
-    setTimeLeft(MAX_RECORD_SECONDS)
-
     const worklet = workletNodeRef.current
     if (worklet) {
       worklet.disconnect()
       workletNodeRef.current = null
     }
-  }, [clearTimers])
+  }, [])
 
   const startRecording = useCallback(async () => {
     setVadError(null)
@@ -142,13 +124,6 @@ export function useSession({ enabled = false } = {}) {
 
       source.connect(worklet)
       worklet.connect(captureCtx.destination)
-
-      setTimeLeft(MAX_RECORD_SECONDS)
-      countdownRef.current = setInterval(
-        () => setTimeLeft((value) => Math.max(0, value - 1)),
-        1000,
-      )
-      stopTimerRef.current = setTimeout(() => stopRecording(), MAX_RECORD_SECONDS * 1000)
     } catch (err) {
       setVadError(err?.message ?? 'マイク初期化失敗')
     }
@@ -211,7 +186,6 @@ export function useSession({ enabled = false } = {}) {
       stopSession()
       setVadError(null)
       setSessionReady(false)
-      setTimeLeft(MAX_RECORD_SECONDS)
       setTurn('user')
       return
     }
@@ -238,5 +212,5 @@ export function useSession({ enabled = false } = {}) {
     }
   }, [stopRecording, stopSession])
 
-  return { turn, vadError, timeLeft }
+  return { turn, vadError }
 }
