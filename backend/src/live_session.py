@@ -228,7 +228,7 @@ class LiveSessionManager:
                     f"[LiveSession] receive returned empty (waiting for input) ts={time.time():.3f}",
                     flush=True,
                 )
-                await asyncio.sleep(0.05)
+                await asyncio.sleep(0.5)
 
     def _extract_audio_data(self, response) -> bytes | None:
         """Live API レスポンスから音声バイト列を取り出す。"""
