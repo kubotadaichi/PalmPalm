@@ -60,6 +60,9 @@ class LiveSessionManager:
         self._ai_speak_start: float | None = None
         self._text_history: list[dict] = []
         self._ctx = None
+        self._sent_audio_chunks = 0
+        self._received_audio_chunks = 0
+        self._tool_call_count = 0
 
     async def connect(self) -> None:
         """Live API セッションを確立する。"""
@@ -84,6 +87,11 @@ class LiveSessionManager:
 
     async def disconnect(self) -> None:
         """セッションを終了する。"""
+        print(
+            f"[LiveSession] disconnect ts={time.time():.3f} "
+            f"sent_chunks={self._sent_audio_chunks} received_chunks={self._received_audio_chunks}",
+            flush=True,
+        )
         if self._ctx:
             await self._ctx.__aexit__(None, None, None)
             self._ctx = None
@@ -92,6 +100,12 @@ class LiveSessionManager:
     async def send_audio_chunk(self, pcm_bytes: bytes) -> None:
         """PCM 16kHz mono int16 の 1 chunk を Live API へ送信。"""
         self._ai_speak_start = None
+        self._sent_audio_chunks += 1
+        print(
+            f"[LiveSession] send_audio_chunk count={self._sent_audio_chunks} "
+            f"bytes={len(pcm_bytes)} ts={time.time():.3f}",
+            flush=True,
+        )
         await self._session.send_realtime_input(
             audio=types.Blob(data=pcm_bytes, mime_type="audio/pcm;rate=16000")
         )
@@ -116,6 +130,12 @@ class LiveSessionManager:
             if audio_data:
                 if self._ai_speak_start is None:
                     self._ai_speak_start = time.time()
+                self._received_audio_chunks += 1
+                print(
+                    f"[LiveSession] receive_audio_chunk count={self._received_audio_chunks} "
+                    f"bytes={len(audio_data)} ts={time.time():.3f}",
+                    flush=True,
+                )
                 yield {
                     "type": "audio_chunk",
                     "data": base64.b64encode(audio_data).decode(),
@@ -123,9 +143,19 @@ class LiveSessionManager:
 
             if response.tool_call:
                 for call in response.tool_call.function_calls:
+                    self._tool_call_count += 1
+                    print(
+                        f"[LiveSession] receive_tool_call count={self._tool_call_count} "
+                        f"name={call.name} ts={time.time():.3f}",
+                        flush=True,
+                    )
                     await self._handle_tool_call(call)
 
             if response.server_content and response.server_content.turn_complete:
+                print(
+                    f"[LiveSession] receive_turn_complete ts={time.time():.3f}",
+                    flush=True,
+                )
                 yield {"type": "turn_complete"}
                 self._ai_speak_start = None
 
