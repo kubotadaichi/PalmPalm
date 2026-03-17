@@ -11,3 +11,14 @@ __pycache__/
 
 # Docker
 frontend/.env.local
+
+# Generated audio files
+backend/assets/audio/tts/
+
+# Claude Code session data
+.claude/
+
+# Misc
+ssh
+docs/plans/
+docs/superpowers/
